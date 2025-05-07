@@ -103,7 +103,7 @@ function parseCSV(
       const sku = row["Supplier SKU"];
       const settlement = parseFloat(row["Final Settlement Amount"]) || 0;
       const category = getCategory(row["Product Name"]);
-      const purchase = Number(customCosts[sku] || defaultCost); 
+      const purchase = Number(customCosts[sku]); 
       const profit = settlement - purchase;
       return { ...row, settlement, returnCharge: 0, category, purchase, profit };
     });
@@ -117,7 +117,7 @@ function parseCSV(
 
       const rawSKU = row["Supplier SKU"]?.trim();
       const sku = rawSKU?.trim() || "other";
-      const purchase = Number(customCosts[sku] || defaultCost); 
+      const purchase = Number(customCosts[sku]); 
       const returnCharge = status === "return" ? settlement : 0;
       const profit = settlement - purchase - returnCharge;
       return { ...row, status, sku, settlement, returnCharge, category, purchase, profit };
