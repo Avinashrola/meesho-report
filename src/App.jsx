@@ -3,67 +3,199 @@ import Papa from "papaparse";
 import { Bar } from "react-chartjs-2";
 import "chart.js/auto";
 import "./index.css";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 function getCategory(productName) {
   const name = productName?.toLowerCase() || "";
   if (name.includes("saree")) return "Saree";
-  if (name.includes("money bank")) return "Money Bank";
+  if (name.includes("money")) return "Money Bank";
   return "Other";
 }
 
-function parseCSV(file, setData, setSummary, setReturnInfo) {
-  Papa.parse(file, {
-    header: true,
-    skipEmptyLines: true,
-    complete: (results) => {
-      console.log("Raw CSV Data:", results); // ADD THIS
-      const rows = results.data;
 
-      const delivered = rows.filter(
-        (row) => row["Live Order Status"]?.trim().toLowerCase() === "delivered"
-      );
 
-      const returns = rows.filter(
-        (row) => {
-          const status = row["Live Order Status"]?.trim().toLowerCase();
-          return status === "return";
-        }
-      );
+const downloadPDF = async () => {
+  const element = document.getElementById("report-content");
 
-      const returnCount = returns.length;
-      const returnCharge = returnCount * 170;
-
-      // Existing mapping logic
-      const enriched = delivered.map((row) => {
-        const settlement = parseFloat(row["Final Settlement Amount"]) || 0;
-        const category = getCategory(row["Product Name"]);
-        const purchase = category === "Saree" ? 360 : category === "Money Bank" ? 140 : 0;
-        const profit = settlement - purchase;
-        return { ...row, settlement, category, purchase, profit };
-      });
-
-      setReturnInfo({ returnCount, returnCharge }); // NEW STATE
-
-      setData(enriched);
-      const summary = {};
-      enriched.forEach((item) => {
-        if (!summary[item.category]) {
-          summary[item.category] = {
-            orders: 0,
-            revenue: 0,
-            purchase: 0,
-            profit: 0,
-          };
-        }
-        summary[item.category].orders += 1;
-        summary[item.category].revenue += item.settlement;
-        summary[item.category].purchase += item.purchase;
-        summary[item.category].profit += item.profit;
-      });
-      setSummary(summary);
-    },
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: null,
   });
+
+  const imgData = canvas.toDataURL("image/png");
+  const pdf = new jsPDF("p", "mm", "a4");
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const padding = 10;
+  const usableWidth = pageWidth - padding * 2;
+
+  // 🖼️ Logo Image Setup
+  const logo = new Image();
+  logo.src = "/D-com-bg.png"; // Place your transparent logo in public/logo.png
+
+  logo.onload = () => {
+    const logoWidth = 20;
+    const logoHeight = 20;
+    const startX = padding;
+    const titleY = padding + 10;
+
+    // 🖊️ Add Logo at Top Left
+    pdf.addImage(logo, "PNG", startX, padding, logoWidth, logoHeight);
+
+    // 🖊️ Add Title Next to Logo
+    pdf.setFontSize(16);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Meesho Business Report", startX + logoWidth + 5, titleY);
+
+    // 🖼️ Add Full Report Below Title + Logo
+    const contentYStart = padding + logoHeight + 10;
+    const imgProps = pdf.getImageProperties(imgData);
+    const imgHeight = (imgProps.height * usableWidth) / imgProps.width;
+
+    pdf.addImage(imgData, "PNG", padding, contentYStart, usableWidth, imgHeight);
+
+    // 🔻 Add Powered by logo at bottom right
+    const bottomLogoY = pageHeight - 25;
+    pdf.addImage(logo, "PNG", pageWidth - padding - 20, bottomLogoY, 20, 20);
+    pdf.setFontSize(10);
+    pdf.text("Powered by", pageWidth - padding - 42, bottomLogoY + 12);
+
+    pdf.save("HISAB-Meesho_P-L_Report.pdf");
+  };
+};
+
+
+
+function parseCSV(
+  rows,
+  setData,
+  setSummary,
+  setReturnInfo,
+  setSkuSummary,
+  setError,
+  customCosts,
+  setUnknownStatusTotal
+) {
+  try {
+    const delivered = rows.filter(
+      (row) => row["Live Order Status"]?.trim().toLowerCase() === "delivered"
+    );
+    const deliveredAndReturn = rows.filter((row) => {
+      const status = row["Live Order Status"]?.trim().toLowerCase();
+      return status === "delivered" || status === "return";
+    });
+
+    const returns = rows.filter(
+      (row) => row["Live Order Status"]?.trim().toLowerCase() === "return"
+    );
+    const returnCount = returns.length;
+    const returnCharge = returns.reduce((sum, row) => {
+      const charge = parseFloat(row["Final Settlement Amount"]) || 0;
+      return sum + charge;
+    }, 0);
+
+    setReturnInfo({ returnCount, returnCharge });
+
+    const enriched = delivered.map((row) => {
+      const sku = row["Supplier SKU"];
+      const settlement = parseFloat(row["Final Settlement Amount"]) || 0;
+      const category = getCategory(row["Product Name"]);
+      const purchase = Number(customCosts[sku] || defaultCost); 
+      const profit = settlement - purchase;
+      return { ...row, settlement, returnCharge: 0, category, purchase, profit };
+    });
+
+    const enrichedAll = deliveredAndReturn.map((row) => {
+
+      let status = row["Live Order Status"]?.trim().toLowerCase();
+      if (!status || status === "" || status === " ") status = "other";
+      const settlement = parseFloat(row["Final Settlement Amount"]) || 0;
+      const category = getCategory(row["Product Name"]);
+
+      const rawSKU = row["Supplier SKU"]?.trim();
+      const sku = rawSKU?.trim() || "other";
+      const purchase = Number(customCosts[sku] || defaultCost); 
+      const returnCharge = status === "return" ? settlement : 0;
+      const profit = settlement - purchase - returnCharge;
+      return { ...row, status, sku, settlement, returnCharge, category, purchase, profit };
+    });
+
+    // Filter rows with missing or empty Live Order Status
+    const unknownStatusRows = rows.filter(
+      (row) => !row["Live Order Status"] || row["Live Order Status"].trim() === ""
+    );
+
+    // Total settlement amount for unknown status rows
+    const unknownStatusTotalSettlement = unknownStatusRows.reduce((sum, row) => {
+      return sum + (parseFloat(row["Final Settlement Amount"]) || 0);
+    }, 0);
+
+    // Add new state for this
+    setUnknownStatusTotal(unknownStatusTotalSettlement);
+
+    const skuSummary = {};
+    enrichedAll.forEach((item) => {
+      const sku = item.sku || "other";
+      if (!skuSummary[sku]) {
+
+        skuSummary[sku] = {
+          delivered: 0,
+          returned: 0,
+
+          settlement: 0,
+          purchase: 0,
+          returnCharge: 0,
+          profit: 0,
+        };
+      }
+      if (item["Live Order Status"].toLowerCase() === "delivered") {
+        skuSummary[sku].delivered += 1;
+        skuSummary[sku].settlement += item.settlement;
+        skuSummary[sku].purchase += item.purchase;
+        skuSummary[sku].profit += item.profit;
+      } else if (item["Live Order Status"].toLowerCase() === "return") {
+        skuSummary[sku].returned += 1;
+        skuSummary[sku].returnCharge += item.returnCharge || 0;
+        skuSummary[sku].profit += item.returnCharge
+      } else {
+        // UNKNOWN or other statuses, still count them
+        skuSummary[sku].settlement += item.settlement;
+        skuSummary[sku].purchase += item.purchase;
+        skuSummary[sku].profit += item.profit;
+      }
+    });
+    setSkuSummary(skuSummary);
+
+    const summary = {};
+    enriched.forEach((item) => {
+      if (!summary[item.category]) {
+        summary[item.category] = {
+          orders: 0,
+          revenue: 0,
+          purchase: 0,
+          profit: 0,
+        };
+      }
+      summary[item.category].orders += 1;
+      summary[item.category].revenue += item.settlement;
+      summary[item.category].purchase += item.purchase;
+      summary[item.category].profit += item.profit;
+    });
+
+    setData(enriched);
+    setSummary(summary);
+    setError(null);
+  } catch (err) {
+    console.error("Parsing Error:", err);
+    setError("Failed to generate report. Please check your CSV format.");
+  }
 }
+
+
+
 
 export default function App() {
   console.log("✅ App component mounted");
@@ -73,89 +205,249 @@ export default function App() {
     returnCount: 0,
     returnCharge: 0,
   });
+  const [skuSummary, setSkuSummary] = useState({});
+  const [error, setError] = useState(null);
+  const [customCosts, setCustomCosts] = useState({});
+  const [step, setStep] = useState("upload");
+  const [skuList, setSkuList] = useState([]);
+  const [unknownStatusTotal, setUnknownStatusTotal] = useState(0);
+  const [defaultCost, setDefaultCost] = useState("");
 
 
-  const handleFile = (e) => {
-    console.log("File selected:", e.target.files[0]); // ADD THIS
+  // Set default cost and apply to all SKUs
+const handleDefaultCostChange = (value) => {
+  setDefaultCost(value);
+  const updatedCosts = {};
+  skuList.forEach((sku) => {
+    updatedCosts[sku] = value;
+  });
+  setCustomCosts(updatedCosts);
+};
+
+
+  const handleFileUpload = (e) => {
     const file = e.target.files[0];
-    console.log("Selected File:", file); // ADD THIS
-    if (file) parseCSV(file, setData, setSummary, setReturnInfo);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const rows = results.data;
+        const skus = Array.from(new Set(rows.map((row) => row["Supplier SKU"]))).filter(Boolean);
+        setSkuList(skus);
+        setStep("custom-cost");
+        setData(rows);
+      },
+    });
+  };
+
+  const handleCostChange = (sku, value) => {
+    setCustomCosts((prev) => ({ ...prev, [sku]: parseFloat(value) || 0 }));
+  };
+
+  const handleSubmitCosts = () => {
+    parseCSV(data, setData, setSummary, setReturnInfo, setSkuSummary, setError, customCosts, setUnknownStatusTotal);
+    setStep("report");
   };
   console.log("Data:", data);
   console.log("Summary:", summary);
   console.log("Return:", returnInfo);
+  console.log("SKU:", skuSummary);
+
+
 
   return (
 
     <div className="container">
-      <h1>🧾 Meesho Profit Dashboard</h1>
-      <input type="file" accept=".csv" onChange={handleFile} className="border rounded px-4 py-2" />
+      <h1 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <img src="/D-com-bg.png" alt="logo" style={{ width: "60px", height: "55px" }} />
+        Meesho P/L Dashboard
+      </h1>
+      {step === "upload" && (
+        <div>
+          <input type="file" accept=".csv" onChange={handleFileUpload} />
+          {error && <p style={{ color: "red" }}>{error}</p>}
+        </div>
+      )}
 
-      {data.length > 0 && <h2>🚀 Data Loaded!</h2>}
+      {error ? (
+        <div style={{
+          backgroundColor: "#ffe6e6",
+          borderLeft: "5px solid #ff4d4d",
+          padding: "15px 20px",
+          marginBottom: "20px",
+          borderRadius: "8px",
+          color: "#990000",
+          fontSize: "16px",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+        }}>
+          <span style={{ fontSize: "20px" }}>🚫</span>
+          <span>{error}</span>
+        </div>
+      ) : data && data.length === 0 ? (
+        <div style={{ padding: "20px", background: "#f0f0f0", borderRadius: "8px", marginTop: "20px", textAlign: "center" }}>
+          <h2>📂 No Data Found</h2>
+          <p>Please upload a valid CSV file to continue.</p>
+        </div>
+      ) : (
+        <h2>🚀 Data Loaded!</h2>
+      )}
+
+      {step === "custom-cost" && (
+
+        <div className="custom-cost-form">
+          <h2>🧾 Enter Custom Purchase Cost per SKU</h2>
+
+          {/* Default Cost Setter */}
+  <div className="default-cost">
+    <label>
+      <strong>💼 Set Default Purchase Cost for All SKUs:</strong>
+      <input
+        type="number"
+        placeholder="e.g. 150"
+        value={defaultCost}
+        onChange={(e) => handleDefaultCostChange(e.target.value)}
+      />
+    </label>
+  </div>
+          <form onSubmit={handleSubmitCosts}>
+            {skuList.map((sku) => (
+              <div className="form-row" key={sku}>
+                <label className="form-label">
+                  <span className="sku-label">{sku}</span>
+                  <input
+                    type="number"
+                    placeholder="Enter purchase cost"
+                    value={customCosts[sku] || ""}
+                    onChange={(e) => handleCostChange(sku, e.target.value)}
+                  />
+                </label>
+              </div>
+            ))}
+            <button className="submit-btn" type="submit">✅ Submit Purchase Costs</button>
+          </form>
+        </div>
+      )}
 
 
-      {data.length > 0 && (
+      {step === "report" && (
         <>
-
-          <div className="cards">
-            <div className="card">Total Orders: <strong>{data.length}</strong></div>
-            <div className="card">
-              Total Profit (Payment - Return):
-              <strong>
-                ₹{(
-                  data.reduce((a, b) => a + b.profit, 0) -
-                  data.reduce((a, b) => (returnInfo.returnCharge || 0), 0)
-                ).toFixed(2)}
-              </strong>
+          <div id="report-content">
+            <div className="cards">
+              <div className="card">
+                <div className="card-title">📦 Total Orders</div>
+                <div className="card-value">{data.length}</div>
+              </div>
+              <div className="card">
+                <div className="card-title">💰 Total Profit (Payment - Return)</div>
+                <div className="card-value">
+                  ₹{(
+                    data.reduce((a, b) => a + b.profit, 0) -
+                    (returnInfo.returnCharge || 0)
+                  ).toFixed(2)}
+                </div>
+              </div>
+              <div className="card">
+                <div className="card-title">📈 Profit/Piece</div>
+                <div className="card-value">
+                  ₹{(data.reduce((a, b) => a + b.profit, 0) / data.length).toFixed(2)}
+                </div>
+              </div>
+              <div className="card">
+                <div className="card-title">📦🔁 Total Returns</div>
+                <div className="card-value">{returnInfo.returnCount}</div>
+              </div>
+              <div className="card">
+                <div className="card-title">💸 Return Charges</div>
+                <div className="card-value">₹{returnInfo.returnCharge}</div>
+              </div>
+              <div className="card">
+                <div className="card-title">🕵️ Compensation & Recoveries</div>
+                <div className="card-value">₹{unknownStatusTotal.toFixed(2)}</div>
+              </div>
             </div>
 
-            <div className="card">Profit/Piece: <strong>₹{(data.reduce((a, b) => a + b.profit, 0) / data.length).toFixed(2)}</strong></div>
-            <div className="card">Total Returns: <strong>{returnInfo.returnCount}</strong></div>
-            <div className="card">Return Charges: <strong>₹{returnInfo.returnCharge}</strong></div>
-          </div>
+            <div className="chart" style={{ height: "300px" }}>
+              <Bar
+                data={{
+                  labels: Object.keys(summary),
+                  datasets: [
+                    {
+                      label: "Net Profit",
+                      data: Object.values(summary).map((v) => v.profit),
+                      backgroundColor: "rgba(75, 192, 192, 0.6)",
+                    },
+                  ],
+                }}
+                options={{ responsive: true }}
+              />
+            </div>
 
-          <div className="chart">
-            <Bar
-              data={{
-                labels: Object.keys(summary),
-                datasets: [
-                  {
-                    label: "Net Profit",
-                    data: Object.values(summary).map((v) => v.profit),
-                    backgroundColor: "rgba(75, 192, 192, 0.6)",
-                  },
-                ],
-              }}
-              options={{ responsive: true }}
-            />
-          </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Orders</th>
-                <th>Revenue</th>
-                <th>Purchase</th>
-                <th>Profit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(summary).map(([cat, val]) => (
-                <tr key={cat}>
-                  <td>{cat}</td>
-                  <td>{val.orders}</td>
-                  <td>₹{val.revenue.toFixed(2)}</td>
-                  <td>₹{val.purchase.toFixed(2)}</td>
-                  <td>₹{val.profit.toFixed(2)}</td>
+            <table>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Orders</th>
+                  <th>Revenue</th>
+                  <th>Purchase</th>
+                  <th>Profit</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {Object.entries(summary).map(([cat, val]) => (
+                  <tr key={cat}>
+                    <td>{cat}</td>
+                    <td>{val.orders}</td>
+                    <td>₹{val.revenue.toFixed(2)}</td>
+                    <td>{(Number(val.purchase) || 0).toFixed(2)}</td>
+                    <td>₹{val.profit.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ height: '20px' }}></div>
+            <h2>📦 SKU-wise Summary</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU / Product</th>
+                  <th>Delivered</th>
 
-          <p className="note">
-            * Only 'Delivered' orders counted. Purchase cost: ₹360 (Saree), ₹140 (Money Bank).
-          </p>
+                  <th>Returned</th>
+                  <th>Revenue</th>
+                  <th>Purchase</th>
+                  <th>Return Charge</th>
+                  <th>Net Profit/Loss</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(skuSummary).map(([sku, val]) => (
+                  <tr key={sku}>
+                    <td>{sku}</td>
+                    <td>{val.delivered}</td>
+
+                    <td>{val.returned}</td>
+                    <td>₹{val.settlement.toFixed(2)}</td>
+                    <td>{(Number(val.purchase) || 0).toFixed(2)}</td>
+                    <td>₹{val.returnCharge.toFixed(2)}</td>
+                    <td>₹{val.profit.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* <p className="note">
+              * Only 'Delivered' orders counted. Purchase cost: ₹360 (Saree), ₹140 (Money Bank).
+            </p> */}
+          </div>
+          <div style={{ height: '20px' }}></div>
+          <button className="fancy-button" onClick={downloadPDF}>
+            📄 Download Report
+          </button>
+
         </>
       )}
     </div>
