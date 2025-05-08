@@ -5,6 +5,7 @@ import "chart.js/auto";
 import "./index.css";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import * as XLSX from "xlsx";
 
 function getCategory(productName) {
   const name = productName?.toLowerCase() || "";
@@ -19,18 +20,19 @@ const downloadPDF = async () => {
   const element = document.getElementById("report-content");
 
   const canvas = await html2canvas(element, {
-    scale: 2,
+    scale: 1.2,
     useCORS: true,
     backgroundColor: null,
   });
 
-  const imgData = canvas.toDataURL("image/png");
+  const imgData = canvas.toDataURL("image/png", );
   const pdf = new jsPDF("p", "mm", "a4");
 
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
+  const imgProps = pdf.getImageProperties(imgData);
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
   const padding = 10;
-  const usableWidth = pageWidth - padding * 2;
+  const usableWidth = pdfWidth - padding * 2;
 
   // 🖼️ Logo Image Setup
   const logo = new Image();
@@ -58,10 +60,10 @@ const downloadPDF = async () => {
     pdf.addImage(imgData, "PNG", padding, contentYStart, usableWidth, imgHeight);
 
     // 🔻 Add Powered by logo at bottom right
-    const bottomLogoY = pageHeight - 25;
-    pdf.addImage(logo, "PNG", pageWidth - padding - 20, bottomLogoY, 20, 20);
-    pdf.setFontSize(10);
-    pdf.text("Powered by", pageWidth - padding - 42, bottomLogoY + 12);
+    // const bottomLogoY = pageHeight - 25;
+    // pdf.addImage(logo, "PNG", pageWidth - padding - 20, bottomLogoY, 20, 20);
+    // pdf.setFontSize(10);
+    // pdf.text("Powered by", pageWidth - padding - 42, bottomLogoY + 12);
 
     pdf.save("HISAB-Meesho_P-L_Report.pdf");
   };
@@ -212,6 +214,7 @@ export default function App() {
   const [skuList, setSkuList] = useState([]);
   const [unknownStatusTotal, setUnknownStatusTotal] = useState(0);
   const [defaultCost, setDefaultCost] = useState("");
+  const [rawExcelData, setRawExcelData] = useState([]);
 
 
   // Set default cost and apply to all SKUs
@@ -225,27 +228,75 @@ const handleDefaultCostChange = (value) => {
 };
 
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
+const handleFileUpload = (e) => {
+  const file = e.target.files[0];
+
+  if (!file) return;
+
+  const isExcel = file.name.endsWith(".xlsx");
+  const isCSV = file.name.endsWith(".csv");
+
+  if (isExcel) {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+
+      // Pick the "Order Payments" sheet
+      const sheet = workbook.Sheets["Order Payments"];
+      if (!sheet) {
+        setError("❌ 'Order Payments' sheet not found.");
+        return;
+      }
+
+      // Parse sheet to JSON, skipping the first row
+      const allData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+      // Extract headers from row 2
+      const headers = allData[1];
+      const rows = allData.slice(2);
+
+      const formattedData = rows.map((row) => {
+        const entry = {};
+        headers.forEach((col, idx) => {
+          entry[col] = row[idx];
+        });
+        return entry;
+      });
+
+      // Move to cost input step
+      const skus = [...new Set(formattedData.map((r) => r["Supplier SKU"]))].filter(Boolean);
+      setSkuList(skus);
+      setStep("custom-cost");
+      setRawExcelData(formattedData);
+      setData(formattedData);
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (isCSV) {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
         const rows = results.data;
-        const skus = Array.from(new Set(rows.map((row) => row["Supplier SKU"]))).filter(Boolean);
+        const skus = [...new Set(rows.map((r) => r["Supplier SKU"]))].filter(Boolean);
         setSkuList(skus);
         setStep("custom-cost");
+        setRawExcelData(rows);
         setData(rows);
       },
+
     });
-  };
+  } else {
+    setError("❌ Unsupported file type. Upload a CSV or Excel (.xlsx).");
+  }
+};
 
   const handleCostChange = (sku, value) => {
     setCustomCosts((prev) => ({ ...prev, [sku]: parseFloat(value) || 0 }));
   };
 
   const handleSubmitCosts = () => {
-    parseCSV(data, setData, setSummary, setReturnInfo, setSkuSummary, setError, customCosts, setUnknownStatusTotal);
+    parseCSV(data, setData, setSummary, setReturnInfo, setSkuSummary, setError, customCosts, setUnknownStatusTotal,rawExcelData);
     setStep("report");
   };
   console.log("Data:", data);
@@ -264,7 +315,7 @@ const handleDefaultCostChange = (value) => {
       </h1>
       {step === "upload" && (
         <div>
-          <input type="file" accept=".csv" onChange={handleFileUpload} />
+          <input type="file" accept=".csv , .xlsx" onChange={handleFileUpload} />
           {error && <p style={{ color: "red" }}>{error}</p>}
         </div>
       )}
