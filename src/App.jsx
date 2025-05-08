@@ -7,6 +7,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import * as XLSX from "xlsx";
 
+
 function getCategory(productName) {
   const name = productName?.toLowerCase() || "";
   if (name.includes("saree")) return "Saree";
@@ -17,58 +18,81 @@ function getCategory(productName) {
 
 
 const downloadPDF = async () => {
-  const element = document.getElementById("report-content");
+  const input = document.getElementById("report-content");
+  if (!input) return;
 
-  const canvas = await html2canvas(element, {
+  const canvas = await html2canvas(input, {
     scale: 1.2,
     useCORS: true,
-    backgroundColor: null,
+    backgroundColor: "#ffffff",
   });
 
-  const imgData = canvas.toDataURL("image/png", );
   const pdf = new jsPDF("p", "mm", "a4");
-
-  const imgProps = pdf.getImageProperties(imgData);
   const pdfWidth = pdf.internal.pageSize.getWidth();
-  const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+  const pdfHeight = pdf.internal.pageSize.getHeight();
   const padding = 10;
-  const usableWidth = pdfWidth - padding * 2;
+  const imgWidth = pdfWidth - padding * 2;
+  const totalCanvasHeight = canvas.height;
+  const pageHeightInPx = (canvas.width / imgWidth) * (pdfHeight - 30); // account for title height
 
-  // 🖼️ Logo Image Setup
+  let renderedHeight = 0;
+  let page = 0;
+
+  // 🖼️ Logo for top + powered by
   const logo = new Image();
-  logo.src = "/D-com-bg.png"; // Place your transparent logo in public/logo.png
+  logo.src = "/D-com-bg.png";
 
   logo.onload = () => {
-    const logoWidth = 20;
-    const logoHeight = 20;
-    const startX = padding;
-    const titleY = padding + 10;
+    while (renderedHeight < totalCanvasHeight) {
+      const pageCanvas = document.createElement("canvas");
+      const context = pageCanvas.getContext("2d");
 
-    // 🖊️ Add Logo at Top Left
-    pdf.addImage(logo, "PNG", startX, padding, logoWidth, logoHeight);
+      const sliceHeight = Math.min(pageHeightInPx, totalCanvasHeight - renderedHeight);
+      pageCanvas.width = canvas.width;
+      pageCanvas.height = sliceHeight;
 
-    // 🖊️ Add Title Next to Logo
-    pdf.setFontSize(16);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Meesho Business Report", startX + logoWidth + 5, titleY);
+      context.drawImage(
+        canvas,
+        0,
+        renderedHeight,
+        canvas.width,
+        sliceHeight,
+        0,
+        0,
+        canvas.width,
+        sliceHeight
+      );
 
-    // 🖼️ Add Full Report Below Title + Logo
-    const contentYStart = padding + logoHeight + 10;
-    const imgProps = pdf.getImageProperties(imgData);
-    const imgHeight = (imgProps.height * usableWidth) / imgProps.width;
+      const imgData = pageCanvas.toDataURL("image/jpeg", 0.9);
+      if (page > 0) pdf.addPage();
 
-    pdf.addImage(imgData, "PNG", padding, contentYStart, usableWidth, imgHeight);
+      // 📄 Add header only on first page
+      if (page === 0) {
+        const logoW = 20;
+        const logoH = 20;
+        pdf.addImage(logo, "PNG", padding, padding, logoW, logoH);
+        pdf.setFontSize(16);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("Meesho Business Report", padding + logoW + 5, padding + 12);
+      }
 
-    // 🔻 Add Powered by logo at bottom right
-    // const bottomLogoY = pageHeight - 25;
-    // pdf.addImage(logo, "PNG", pageWidth - padding - 20, bottomLogoY, 20, 20);
-    // pdf.setFontSize(10);
-    // pdf.text("Powered by", pageWidth - padding - 42, bottomLogoY + 12);
+      const yPos = page === 0 ? 30 : 10;
+      const drawHeight = (sliceHeight / canvas.width) * imgWidth;
+      pdf.addImage(imgData, "JPEG", padding, yPos, imgWidth, drawHeight);
 
-    pdf.save("HISAB-Meesho_P-L_Report.pdf");
+      renderedHeight += sliceHeight;
+      page++;
+    }
+
+    // Footer: Powered by
+    pdf.setPage(page);
+    pdf.setFontSize(10);
+    pdf.text("Powered by", pdfWidth - 48, pdfHeight - 12);
+    pdf.addImage(logo, "PNG", pdfWidth - 25, pdfHeight - 20, 15, 15);
+
+    pdf.save("HISAB-Meesho_Report.pdf");
   };
 };
-
 
 
 function parseCSV(
