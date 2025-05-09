@@ -13,6 +13,16 @@ function getCategory(productName) {
   if (name.includes("saree")) return "Saree";
   if (name.includes("money")) return "Money Bank";
   return "Other";
+
+  // function getCategory(productName) {
+  //   if (!productName || typeof productName !== "string") return "Other";
+
+  //   const name = productName.trim();
+  //   const words = name.split(" ");
+  //   const category = words[0]; // First word as category (can be improved if needed)
+
+  //   return category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
+  // }
 }
 
 
@@ -103,7 +113,8 @@ function parseCSV(
   setSkuSummary,
   setError,
   customCosts,
-  setUnknownStatusTotal
+  setUnknownStatusTotal,
+  setDeliveredReturnRto
 ) {
   try {
     const delivered = rows.filter(
@@ -113,6 +124,22 @@ function parseCSV(
       const status = row["Live Order Status"]?.trim().toLowerCase();
       return status === "delivered" || status === "return";
     });
+    const deliveredReturnRtoData = rows.filter((row) => {
+      const status = row["Live Order Status"]?.trim().toLowerCase();
+      return status === "delivered" || status === "return" || status === "rto";
+    });
+    const rtoData = rows.filter((row) => {
+      const status = row["Live Order Status"]?.trim().toLowerCase();
+      return status === "rto";
+    });
+
+    const deliveredReturnRtoCount = deliveredReturnRtoData.length;
+    const rtoCount = rtoData.length;
+
+
+    setDeliveredReturnRto({ deliveredReturnRtoCount, rtoCount });
+
+
 
     const returns = rows.filter(
       (row) => row["Live Order Status"]?.trim().toLowerCase() === "return"
@@ -158,6 +185,7 @@ function parseCSV(
     const unknownStatusTotalSettlement = unknownStatusRows.reduce((sum, row) => {
       return sum + (parseFloat(row["Final Settlement Amount"]) || 0);
     }, 0);
+
 
     // Add new state for this
     setUnknownStatusTotal(unknownStatusTotalSettlement);
@@ -231,6 +259,10 @@ export default function MeeshoProfitDashboard() {
     returnCount: 0,
     returnCharge: 0,
   });
+  const [deliveredReturnRto, setDeliveredReturnRto] = useState({
+    deliveredReturnRtoCount: 0,
+    rtoCount: 0,
+  });
   const [skuSummary, setSkuSummary] = useState({});
   const [error, setError] = useState(null);
   const [customCosts, setCustomCosts] = useState({});
@@ -239,6 +271,18 @@ export default function MeeshoProfitDashboard() {
   const [unknownStatusTotal, setUnknownStatusTotal] = useState(0);
   const [defaultCost, setDefaultCost] = useState("");
   const [rawExcelData, setRawExcelData] = useState([]);
+
+  if (step === "report") {
+    var totalRevenue = data.reduce((a, b) => a + b.settlement, 0);
+    var totalProfit = data.reduce((a, b) => a + b.profit, 0);
+    var returnRate = ((returnInfo.returnCount) / (deliveredReturnRto.deliveredReturnRtoCount) * 100).toFixed(1);
+    var profitMargin = ((totalProfit / totalRevenue) * 100).toFixed(1);
+
+    var profitMarginColor = profitMargin > 10 ? "green" : "black";
+    var returnRateColor = returnRate > 10 ? "red" : "black";
+  }
+
+
 
 
   // Set default cost and apply to all SKUs
@@ -320,7 +364,7 @@ export default function MeeshoProfitDashboard() {
   };
 
   const handleSubmitCosts = () => {
-    parseCSV(data, setData, setSummary, setReturnInfo, setSkuSummary, setError, customCosts, setUnknownStatusTotal, rawExcelData);
+    parseCSV(data, setData, setSummary, setReturnInfo, setSkuSummary, setError, customCosts, setUnknownStatusTotal, setDeliveredReturnRto);
     setStep("report");
   };
   console.log("Data:", data);
@@ -416,27 +460,34 @@ export default function MeeshoProfitDashboard() {
                 <div className="card-value">{data.length}</div>
               </div>
               <div className="card">
-                <div className="card-title">💰 Total Profit (Payment - Return + Compensation)</div>
-                <div className="card-value">
-                  ₹{(
-                    data.reduce((a, b) => a + b.profit, 0) +
-                    (returnInfo.returnCharge || 0) + unknownStatusTotal
-                  ).toFixed(2)}
-                </div>
-              </div>
-              <div className="card">
                 <div className="card-title">📈 Profit/Piece</div>
                 <div className="card-value">
                   ₹{(data.reduce((a, b) => a + b.profit, 0) / data.length).toFixed(2)}
                 </div>
               </div>
               <div className="card">
+              <div className="card-title">💸 Return Charges</div>
+              <div className="card-value">₹{returnInfo.returnCharge}</div>
+            </div>
+             
+            </div>
+            <div className="cards">
+              <div className="card">
                 <div className="card-title">📦🔁 Total Returns</div>
                 <div className="card-value">{returnInfo.returnCount}</div>
+                <div className="card-subtext" style={{ color: returnRateColor }}>📉 {returnRate}% of Orders</div>
               </div>
               <div className="card">
-                <div className="card-title">💸 Return Charges</div>
-                <div className="card-value">₹{returnInfo.returnCharge}</div>
+                <div className="card-title">💰 Total Profit (Payment - Return + Compensation)</div>
+                <div className="card-value">₹{totalProfit.toFixed(2)}</div>
+                <div className="card-subtext" style={{ color: profitMarginColor }}>📈 {profitMargin}% of Total Revenue</div>
+              </div>
+           
+            </div>
+            <div className="cards">
+              <div className="card">
+                <div className="card-title">🚚 RTO Return</div>
+                <div className="card-value">{deliveredReturnRto.rtoCount}</div>
               </div>
               <div className="card">
                 <div className="card-title">🕵️ Compensation & Recoveries</div>
@@ -517,6 +568,40 @@ export default function MeeshoProfitDashboard() {
             {/* <p className="note">
               * Only 'Delivered' orders counted. Purchase cost: ₹360 (Saree), ₹140 (Money Bank).
             </p> */}
+
+            <div className="ai-insights">
+              <h2>🧠 AI Insights</h2>
+              <ul>
+                {Object.entries(skuSummary)
+                  .sort(([, a], [, b]) => b.profit - a.profit)
+                  .slice(0, 3)
+                  .map(([sku], index) => (
+                    <li key={sku}>#{index + 1} 🥇 Top Profit SKU: <strong>{sku}</strong> (₹{skuSummary[sku].profit.toFixed(2)})</li>
+                  ))}
+
+                {Object.entries(skuSummary)
+                  .sort(([, a], [, b]) => b.returned - a.returned)
+                  .slice(0, 3)
+                  .map(([sku], index) => (
+                    <li key={sku}>#{index + 1} 🔁 Most Returned SKU: <strong>{sku}</strong> ({skuSummary[sku].returned} returns)</li>
+                  ))}
+
+                {(() => {
+                  const topCategory = Object.entries(summary).sort(([, a], [, b]) => b.profit - a.profit)[0];
+                  return topCategory ? (
+                    <li>🏆 Best Category: <strong>{topCategory[0]}</strong> (₹{topCategory[1].profit.toFixed(2)} profit)</li>
+                  ) : null;
+                })()}
+
+                {(() => {
+                  const worst = Object.entries(skuSummary).sort(([, a], [, b]) => a.profit - b.profit)[0];
+                  return worst ? (
+                    <li>🔻 Lowest Performing SKU: <strong>{worst[0]}</strong> (₹{worst[1].profit.toFixed(2)} profit)</li>
+                  ) : null;
+                })()}
+              </ul>
+            </div>
+
           </div>
           <div style={{ height: '20px' }}></div>
           <button className="fancy-button" onClick={downloadPDF}>
