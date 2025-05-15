@@ -1,36 +1,48 @@
-// components/Tabs.jsx
 import React, { useState } from "react";
 import "./Tabs.css";
 
 export function Tabs({ defaultValue, children }) {
-  const [active, setActive] = useState(defaultValue);
+  const [activeTab, setActiveTab] = useState(defaultValue);
+
   const triggers = [];
   const contents = [];
 
   React.Children.forEach(children, (child) => {
-    if (child.type.name === "TabsTrigger") {
-      triggers.push(React.cloneElement(child, { active, setActive }));
-    }
-    if (child.type.name === "TabsContent") {
+    if (child.type === TabsTrigger) {
+      triggers.push(
+        React.cloneElement(child, {
+          active: child.props.value === activeTab,
+          onClick: () => setActiveTab(child.props.value),
+        })
+      );
+    } else if (child.type === TabsContent) {
       contents.push(child);
     }
   });
 
   return (
-    <>
-      <div className="tab-triggers">{triggers}</div>
-      <div className="tab-content">
-        {contents.find((c) => c.props.value === active)}
+    <div className="tabs">
+      <div className="tabs-header" style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+        {triggers}
       </div>
-    </>
+      <div className="tabs-body">
+        {contents.map((content) =>
+          content.props.value === activeTab ? (
+            <div key={content.props.value}>{content.props.children}</div>
+          ) : null
+        )}
+      </div>
+    </div>
   );
+
+
 }
 
-export function TabsTrigger({ value, children, active, setActive }) {
+export function TabsTrigger({ value, children, active, onClick }) {
   return (
     <button
       className={`tab-button ${active === value ? "active" : ""}`}
-      onClick={() => setActive(value)}
+      onClick={onClick}
     >
       {children}
     </button>
