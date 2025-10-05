@@ -120,6 +120,12 @@ function parseCSV(
     const delivered = rows.filter(
       (row) => row["Live Order Status"]?.trim().toLowerCase() === "delivered"
     );
+    const customerReturned = rows.filter(
+      (row) => row["Live Order Status"]?.trim().toLowerCase() === "return"
+    );
+    const rtoReturned = rows.filter(
+      (row) => row["Live Order Status"]?.trim().toLowerCase() === "rto"
+    );
     const deliveredAndReturn = rows.filter((row) => {
       const status = row["Live Order Status"]?.trim().toLowerCase();
       return status === "delivered" || status === "return";
@@ -133,11 +139,12 @@ function parseCSV(
       return status === "rto";
     });
 
-    const deliveredReturnRtoCount = deliveredReturnRtoData.length;
+    const deliveredReturnRtoCount = (delivered.length + customerReturned.length + rtoReturned.length);
+    const deliveredCount = delivered.length;
     const rtoCount = rtoData.length;
 
 
-    setDeliveredReturnRto({ deliveredReturnRtoCount, rtoCount });
+    setDeliveredReturnRto({ deliveredReturnRtoCount, rtoCount , deliveredCount });
 
 
 
@@ -161,7 +168,7 @@ function parseCSV(
       return { ...row, settlement, returnCharge: 0, category, purchase, profit };
     });
 
-    const enrichedAll = deliveredAndReturn.map((row) => {
+    const enrichedAll = deliveredReturnRtoData.map((row) => {
 
       let status = row["Live Order Status"]?.trim().toLowerCase();
       if (!status || status === "" || status === " ") status = "other";
@@ -198,7 +205,7 @@ function parseCSV(
         skuSummary[sku] = {
           delivered: 0,
           returned: 0,
-
+          rto: 0,
           settlement: 0,
           purchase: 0,
           returnCharge: 0,
@@ -214,6 +221,8 @@ function parseCSV(
         skuSummary[sku].returned += 1;
         skuSummary[sku].returnCharge += item.returnCharge || 0;
         skuSummary[sku].profit += item.returnCharge
+      } else if (item["Live Order Status"].toLowerCase() === "rto") {
+        skuSummary[sku].rto += 1; 
       } else {
         // UNKNOWN or other statuses, still count them
         skuSummary[sku].settlement += item.settlement;
@@ -262,6 +271,7 @@ export default function MeeshoProfitDashboard() {
   const [deliveredReturnRto, setDeliveredReturnRto] = useState({
     deliveredReturnRtoCount: 0,
     rtoCount: 0,
+    deliveredCount : 0,
   });
   const [skuSummary, setSkuSummary] = useState({});
   const [error, setError] = useState(null);
@@ -275,7 +285,7 @@ export default function MeeshoProfitDashboard() {
   if (step === "report") {
     var totalRevenue = data.reduce((a, b) => a + b.settlement, 0);
     var totalProfit = data.reduce((a, b) => a + b.profit, 0);
-    var returnRate = ((returnInfo.returnCount) / (deliveredReturnRto.deliveredReturnRtoCount) * 100).toFixed(1);
+    var returnRate = ((returnInfo.returnCount / deliveredReturnRto.deliveredReturnRtoCount) * 100).toFixed(1);
     var profitMargin = ((totalProfit / totalRevenue) * 100).toFixed(1);
 
     var profitMarginColor = profitMargin > 10 ? "green" : "black";
@@ -457,19 +467,25 @@ export default function MeeshoProfitDashboard() {
             <div className="cards">
               <div className="card">
                 <div className="card-title">📦 Total Orders</div>
-                <div className="card-value">{data.length}</div>
+                <div className="card-value">{deliveredReturnRto.deliveredReturnRtoCount}</div>
               </div>
+              <div className="card">
+                <div className="card-title">📦 Total Orders</div>
+                <div className="card-value">{deliveredReturnRto.deliveredCount}</div>
+              </div>
+              
+
               <div className="card">
                 <div className="card-title">📈 Profit/Piece</div>
                 <div className="card-value">
-                  ₹{(data.reduce((a, b) => a + b.profit, 0) / data.length).toFixed(2)}
+                  ₹{(data.reduce((a, b) => a + b.profit, 0) / deliveredReturnRto.deliveredReturnRtoCount).toFixed(2)}
                 </div>
               </div>
               <div className="card">
-              <div className="card-title">💸 Return Charges</div>
-              <div className="card-value">₹{returnInfo.returnCharge}</div>
-            </div>
-             
+                <div className="card-title">💸 Return Charges</div>
+                <div className="card-value">₹{returnInfo.returnCharge.toFixed(2)}</div>
+              </div>
+
             </div>
             <div className="cards">
               <div className="card">
@@ -482,7 +498,7 @@ export default function MeeshoProfitDashboard() {
                 <div className="card-value">₹{totalProfit.toFixed(2)}</div>
                 <div className="card-subtext" style={{ color: profitMarginColor }}>📈 {profitMargin}% of Total Revenue</div>
               </div>
-           
+
             </div>
             <div className="cards">
               <div className="card">
@@ -543,25 +559,40 @@ export default function MeeshoProfitDashboard() {
                   <th>Delivered</th>
 
                   <th>Returned</th>
+                  <th>RTO</th>
                   <th>Revenue</th>
                   <th>Purchase</th>
                   <th>Return Charge</th>
                   <th>Net Profit/Loss</th>
+                  <th>Customer Return(%)</th>
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(skuSummary).map(([sku, val]) => (
-                  <tr key={sku}>
-                    <td>{sku}</td>
-                    <td>{val.delivered}</td>
+                {Object.entries(skuSummary).map(([sku, val]) => {
 
-                    <td>{val.returned}</td>
-                    <td>₹{val.settlement.toFixed(2)}</td>
-                    <td>{(Number(val.purchase) || 0).toFixed(2)}</td>
-                    <td>₹{val.returnCharge.toFixed(2)}</td>
-                    <td>₹{val.profit.toFixed(2)}</td>
-                  </tr>
-                ))}
+                  const totalOrders = val.delivered + val.returned + val.rto;
+                  const returnPercent = totalOrders > 0 ? (val.returned / totalOrders) * 100 : 0;
+                  const colored = returnPercent > 15 ? "red" : "green";
+
+
+                  return (
+
+                    <tr key={sku}>
+                      <td>{sku}</td>
+                      <td>{val.delivered}</td>
+
+                      <td>{val.returned}</td>
+                      <td>{val.rto}</td>
+                      <td>₹{val.settlement.toFixed(2)}</td>
+                      <td>{(Number(val.purchase) || 0).toFixed(2)}</td>
+                      <td>₹{val.returnCharge.toFixed(2)}</td>
+                      <td>₹{val.profit.toFixed(2)}</td>
+                      <td style={{ color: colored }}>
+                        {returnPercent.toFixed(1)}%
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
 
