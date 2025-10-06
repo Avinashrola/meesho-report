@@ -1,301 +1,91 @@
 import React, { useState } from "react";
 import Papa from "papaparse";
-import { Bar } from "react-chartjs-2";
-import "chart.js/auto";
-import "./index.css";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 import * as XLSX from "xlsx";
-
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 function getCategory(productName) {
   const name = productName?.toLowerCase() || "";
   if (name.includes("saree")) return "Saree";
   if (name.includes("money")) return "Money Bank";
   return "Other";
-
-  // function getCategory(productName) {
-  //   if (!productName || typeof productName !== "string") return "Other";
-
-  //   const name = productName.trim();
-  //   const words = name.split(" ");
-  //   const category = words[0]; // First word as category (can be improved if needed)
-
-  //   return category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
-  // }
 }
-
-
-
-const downloadPDF = async () => {
-  const input = document.getElementById("report-content");
-  if (!input) return;
-
-  const canvas = await html2canvas(input, {
-    scale: 1.2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-  });
-
-  const pdf = new jsPDF("p", "mm", "a4");
-  const pdfWidth = pdf.internal.pageSize.getWidth();
-  const pdfHeight = pdf.internal.pageSize.getHeight();
-  const padding = 10;
-  const imgWidth = pdfWidth - padding * 2;
-  const totalCanvasHeight = canvas.height;
-  const pageHeightInPx = (canvas.width / imgWidth) * (pdfHeight - 30); // account for title height
-
-  let renderedHeight = 0;
-  let page = 0;
-
-  // 🖼️ Logo for top + powered by
-  const logo = new Image();
-  logo.src = "/D-com-bg.png";
-
-  logo.onload = () => {
-    while (renderedHeight < totalCanvasHeight) {
-      const pageCanvas = document.createElement("canvas");
-      const context = pageCanvas.getContext("2d");
-
-      const sliceHeight = Math.min(pageHeightInPx, totalCanvasHeight - renderedHeight);
-      pageCanvas.width = canvas.width;
-      pageCanvas.height = sliceHeight;
-
-      context.drawImage(
-        canvas,
-        0,
-        renderedHeight,
-        canvas.width,
-        sliceHeight,
-        0,
-        0,
-        canvas.width,
-        sliceHeight
-      );
-
-      const imgData = pageCanvas.toDataURL("image/jpeg", 0.9);
-      if (page > 0) pdf.addPage();
-
-      // 📄 Add header only on first page
-      if (page === 0) {
-        const logoW = 20;
-        const logoH = 20;
-        pdf.addImage(logo, "PNG", padding, padding, logoW, logoH);
-        pdf.setFontSize(16);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("Meesho Business Report", padding + logoW + 5, padding + 12);
-      }
-
-      const yPos = page === 0 ? 30 : 10;
-      const drawHeight = (sliceHeight / canvas.width) * imgWidth;
-      pdf.addImage(imgData, "JPEG", padding, yPos, imgWidth, drawHeight);
-
-      renderedHeight += sliceHeight;
-      page++;
-    }
-
-    // Footer: Powered by
-    pdf.setPage(page);
-    pdf.setFontSize(10);
-    pdf.text("Powered by", pdfWidth - 48, pdfHeight - 12);
-    pdf.addImage(logo, "PNG", pdfWidth - 25, pdfHeight - 20, 15, 15);
-
-    pdf.save("HISAB-Meesho_Report.pdf");
-  };
-};
-
-
-function parseCSV(
-  rows,
-  setData,
-  setSummary,
-  setReturnInfo,
-  setSkuSummary,
-  setError,
-  customCosts,
-  setUnknownStatusTotal,
-  setDeliveredReturnRto
-) {
-  try {
-    const delivered = rows.filter(
-      (row) => row["Live Order Status"]?.trim().toLowerCase() === "delivered"
-    );
-    const customerReturned = rows.filter(
-      (row) => row["Live Order Status"]?.trim().toLowerCase() === "return"
-    );
-    const rtoReturned = rows.filter(
-      (row) => row["Live Order Status"]?.trim().toLowerCase() === "rto"
-    );
-    const deliveredAndReturn = rows.filter((row) => {
-      const status = row["Live Order Status"]?.trim().toLowerCase();
-      return status === "delivered" || status === "return";
-    });
-    const deliveredReturnRtoData = rows.filter((row) => {
-      const status = row["Live Order Status"]?.trim().toLowerCase();
-      return status === "delivered" || status === "return" || status === "rto";
-    });
-    const rtoData = rows.filter((row) => {
-      const status = row["Live Order Status"]?.trim().toLowerCase();
-      return status === "rto";
-    });
-
-    const deliveredReturnRtoCount = (delivered.length + customerReturned.length + rtoReturned.length);
-    const deliveredCount = delivered.length;
-    const rtoCount = rtoData.length;
-
-
-    setDeliveredReturnRto({ deliveredReturnRtoCount, rtoCount , deliveredCount });
-
-
-
-    const returns = rows.filter(
-      (row) => row["Live Order Status"]?.trim().toLowerCase() === "return"
-    );
-    const returnCount = returns.length;
-    const returnCharge = returns.reduce((sum, row) => {
-      const charge = parseFloat(row["Final Settlement Amount"]) || 0;
-      return sum + charge;
-    }, 0);
-
-    setReturnInfo({ returnCount, returnCharge });
-
-    const enriched = delivered.map((row) => {
-      const sku = row["Supplier SKU"];
-      const settlement = parseFloat(row["Final Settlement Amount"]) || 0;
-      const category = getCategory(row["Product Name"]);
-      const purchase = Number(customCosts[sku]);
-      const profit = settlement - purchase;
-      return { ...row, settlement, returnCharge: 0, category, purchase, profit };
-    });
-
-    const enrichedAll = deliveredReturnRtoData.map((row) => {
-
-      let status = row["Live Order Status"]?.trim().toLowerCase();
-      if (!status || status === "" || status === " ") status = "other";
-      const settlement = parseFloat(row["Final Settlement Amount"]) || 0;
-      const category = getCategory(row["Product Name"]);
-
-      const rawSKU = row["Supplier SKU"]?.trim();
-      const sku = rawSKU?.trim() || "other";
-      const purchase = Number(customCosts[sku]);
-      const returnCharge = status === "return" ? settlement : 0;
-      const profit = settlement - purchase - returnCharge;
-      return { ...row, status, sku, settlement, returnCharge, category, purchase, profit };
-    });
-
-    // Filter rows with missing or empty Live Order Status
-    const unknownStatusRows = rows.filter(
-      (row) => !row["Live Order Status"] || row["Live Order Status"].trim() === ""
-    );
-
-    // Total settlement amount for unknown status rows
-    const unknownStatusTotalSettlement = unknownStatusRows.reduce((sum, row) => {
-      return sum + (parseFloat(row["Final Settlement Amount"]) || 0);
-    }, 0);
-
-
-    // Add new state for this
-    setUnknownStatusTotal(unknownStatusTotalSettlement);
-
-    const skuSummary = {};
-    enrichedAll.forEach((item) => {
-      const sku = item.sku || "other";
-      if (!skuSummary[sku]) {
-
-        skuSummary[sku] = {
-          delivered: 0,
-          returned: 0,
-          rto: 0,
-          settlement: 0,
-          purchase: 0,
-          returnCharge: 0,
-          profit: 0,
-        };
-      }
-      if (item["Live Order Status"].toLowerCase() === "delivered") {
-        skuSummary[sku].delivered += 1;
-        skuSummary[sku].settlement += item.settlement;
-        skuSummary[sku].purchase += item.purchase;
-        skuSummary[sku].profit += item.profit;
-      } else if (item["Live Order Status"].toLowerCase() === "return") {
-        skuSummary[sku].returned += 1;
-        skuSummary[sku].returnCharge += item.returnCharge || 0;
-        skuSummary[sku].profit += item.returnCharge
-      } else if (item["Live Order Status"].toLowerCase() === "rto") {
-        skuSummary[sku].rto += 1; 
-      } else {
-        // UNKNOWN or other statuses, still count them
-        skuSummary[sku].settlement += item.settlement;
-        skuSummary[sku].purchase += item.purchase;
-        skuSummary[sku].profit += item.profit;
-      }
-    });
-    setSkuSummary(skuSummary);
-
-    const summary = {};
-    enriched.forEach((item) => {
-      if (!summary[item.category]) {
-        summary[item.category] = {
-          orders: 0,
-          revenue: 0,
-          purchase: 0,
-          profit: 0,
-        };
-      }
-      summary[item.category].orders += 1;
-      summary[item.category].revenue += item.settlement;
-      summary[item.category].purchase += item.purchase;
-      summary[item.category].profit += item.profit;
-    });
-
-    setData(enriched);
-    setSummary(summary);
-    setError(null);
-  } catch (err) {
-    console.error("Parsing Error:", err);
-    setError("Failed to generate report. Please check your CSV format.");
-  }
-}
-
-
-
 
 export default function MeeshoProfitDashboard() {
-  console.log("✅ App component mounted");
-  const [data, setData] = useState([]);
-  const [summary, setSummary] = useState({});
-  const [returnInfo, setReturnInfo] = useState({
-    returnCount: 0,
-    returnCharge: 0,
-  });
-  const [deliveredReturnRto, setDeliveredReturnRto] = useState({
-    deliveredReturnRtoCount: 0,
-    rtoCount: 0,
-    deliveredCount : 0,
-  });
-  const [skuSummary, setSkuSummary] = useState({});
-  const [error, setError] = useState(null);
-  const [customCosts, setCustomCosts] = useState({});
+  const [orderData, setOrderData] = useState([]);
+  const [paymentFiles, setPaymentFiles] = useState([]);
+  const [processedPayments, setProcessedPayments] = useState([]);
   const [step, setStep] = useState("upload");
+  const [customCosts, setCustomCosts] = useState({});
   const [skuList, setSkuList] = useState([]);
-  const [unknownStatusTotal, setUnknownStatusTotal] = useState(0);
   const [defaultCost, setDefaultCost] = useState("");
-  const [rawExcelData, setRawExcelData] = useState([]);
+  const [summary, setSummary] = useState({});
+  const [skuSummary, setSkuSummary] = useState({});
+  const [mergedData, setMergedData] = useState([]);
+  const [error, setError] = useState(null);
 
-  if (step === "report") {
-    var totalRevenue = data.reduce((a, b) => a + b.settlement, 0);
-    var totalProfit = data.reduce((a, b) => a + b.profit, 0);
-    var returnRate = ((returnInfo.returnCount / deliveredReturnRto.deliveredReturnRtoCount) * 100).toFixed(1);
-    var profitMargin = ((totalProfit / totalRevenue) * 100).toFixed(1);
+  const parseExcelOrCSV = (file, callback) => {
+    const isExcel = file.name.endsWith(".xlsx");
+    const isCSV = file.name.endsWith(".csv");
 
-    var profitMarginColor = profitMargin > 10 ? "green" : "black";
-    var returnRateColor = returnRate > 10 ? "red" : "black";
-  }
+    if (isExcel) {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[1];
+        const sheet = workbook.Sheets[sheetName];
+        const allData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        const headers = allData[1] || allData[0];
+        const rows = allData.slice(allData[1] ? 2 : 1);
+        const formattedData = rows.map((row) => {
+          const entry = {};
+          headers.forEach((col, idx) => {
+            entry[col] = row[idx];
+          });
+          return entry;
+        });
+        callback(formattedData);
+      };
+      reader.readAsArrayBuffer(file);
+    } else if (isCSV) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => callback(results.data),
+      });
+    }
+  };
 
+  const handleOrderFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
+    parseExcelOrCSV(file, (data) => {
+      setOrderData(data);
+      const skus = [...new Set(data.map((r) => r["SKU"]))].filter(Boolean);
+      setSkuList(skus);
+     
+    });
+  };
 
+  const handlePaymentFilesUpload = (e) => {
+    const files = Array.from(e.target.files);
+    const allPayments = [];
+    let filesProcessed = 0;
 
-  // Set default cost and apply to all SKUs
+    files.forEach((file) => {
+      parseExcelOrCSV(file, (data) => {
+        allPayments.push(...data);
+        filesProcessed++;
+        
+        if (filesProcessed === files.length) {
+          setProcessedPayments(allPayments);
+          setPaymentFiles(files);
+        }
+      });
+    });
+  };
+
   const handleDefaultCostChange = (value) => {
     setDefaultCost(value);
     const updatedCosts = {};
@@ -305,341 +95,386 @@ export default function MeeshoProfitDashboard() {
     setCustomCosts(updatedCosts);
   };
 
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-
-    if (!file) return;
-
-    const isExcel = file.name.endsWith(".xlsx");
-    const isCSV = file.name.endsWith(".csv");
-
-    if (isExcel) {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const data = new Uint8Array(evt.target.result);
-        const workbook = XLSX.read(data, { type: "array" });
-
-        // Pick the "Order Payments" sheet
-        const sheet = workbook.Sheets["Order Payments"];
-        if (!sheet) {
-          setError("❌ 'Order Payments' sheet not found.");
-          return;
-        }
-
-        // Parse sheet to JSON, skipping the first row
-        const allData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-
-        // Extract headers from row 2
-        const headers = allData[1];
-        const rows = allData.slice(2);
-
-        const formattedData = rows.map((row) => {
-          const entry = {};
-          headers.forEach((col, idx) => {
-            entry[col] = row[idx];
-          });
-          return entry;
-        });
-
-        // Move to cost input step
-        const skus = [...new Set(formattedData.map((r) => r["Supplier SKU"]))].filter(Boolean);
-        setSkuList(skus);
-        setStep("custom-cost");
-        setRawExcelData(formattedData);
-        setData(formattedData);
-      };
-      reader.readAsArrayBuffer(file);
-    } else if (isCSV) {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          const rows = results.data;
-          const skus = [...new Set(rows.map((r) => r["Supplier SKU"]))].filter(Boolean);
-          setSkuList(skus);
-          setStep("custom-cost");
-          setRawExcelData(rows);
-          setData(rows);
-        },
-
-      });
-    } else {
-      setError("❌ Unsupported file type. Upload a CSV or Excel (.xlsx).");
-    }
-  };
-
   const handleCostChange = (sku, value) => {
     setCustomCosts((prev) => ({ ...prev, [sku]: parseFloat(value) || 0 }));
   };
 
-  const handleSubmitCosts = () => {
-    parseCSV(data, setData, setSummary, setReturnInfo, setSkuSummary, setError, customCosts, setUnknownStatusTotal, setDeliveredReturnRto);
+  const mergeOrdersWithPayments = () => {
+    if (!orderData.length || !processedPayments.length) {
+      setError("Please upload both order file and payment files");
+      return;
+    }
+
+    console.log(orderData);
+
+    const merged = orderData.map((order) => {
+      const orderId = order["Sub Order No"] || order["sub order no"];
+      
+      const matchingPayments = processedPayments.filter((payment) => {
+        const paymentOrderId = payment["Sub Order No"] || payment["sub order no"];
+        return paymentOrderId === orderId;
+      });
+
+      const totalSettlement = matchingPayments.reduce((sum, p) => {
+        return sum + (parseFloat(p["Final Settlement Amount"]) || 0);
+      }, 0);
+
+      const hasValidPayment = matchingPayments.some((p) => {
+  const status = (p["Live Order Status"] || p["Payment Status"] || "").toLowerCase().trim();
+  return status && status !== "return" && status !== "returned" && status !== "rto";
+});
+
+      const paymentDetails = matchingPayments.map((p) => ({
+        date: p["Order Date"] || p["Settlement Date"] || "",
+        status: p["Live Order Status"] || p["Payment Status"] || "",
+        amount: parseFloat(p["Final Settlement Amount"]) || 0,
+        type: p["Transaction Type"] || "Payment"
+      }));
+
+      const sku = order["SKU"];
+      const purchase = hasValidPayment ? (Number(customCosts[sku]) || 0) : 0;
+     
+      const category = getCategory(order["Product Name"]);
+      const profit = totalSettlement - purchase;
+
+      return {
+        ...order,
+        orderId,
+        sku,
+        category,
+        totalSettlement,
+        purchase,
+        profit,
+        paymentDetails,
+        paymentCount: matchingPayments.length,
+        hasValidPayment 
+      };
+    });
+
+    setMergedData(merged);
+    calculateSummaries(merged);
+     console.log("sku list ===== "+skuList);
     setStep("report");
   };
-  console.log("Data:", data);
-  console.log("Summary:", summary);
-  console.log("Return:", returnInfo);
-  console.log("SKU:", skuSummary);
 
+  const calculateSummaries = (data) => {
+    const categorySummary = {};
+    const skuSum = {};
+    console.log(data);
 
+    data.forEach((item) => {
+      const isReturned = item.paymentDetails.some((p) => {
+      const status = p.status.toLowerCase().trim();
+      return status === "return" || status === "returned" || status === "rto";
+    });
+    
+
+      if (!categorySummary[item.category]) {
+        categorySummary[item.category] = {
+          orders: 0,
+          revenue: 0,
+          purchase: 0,
+          profit: 0,
+          returned: 0
+        };
+      }
+      if (isReturned) categorySummary[item.category].returned += 1;
+      categorySummary[item.category].orders += 1;
+      categorySummary[item.category].revenue += item.totalSettlement;
+      categorySummary[item.category].purchase += item.purchase;
+      categorySummary[item.category].profit += item.profit;
+
+      if (!skuSum[item.SKU]) {
+        skuSum[item.SKU] = {
+          orders: 0,
+          revenue: 0,
+          purchase: 0,
+          profit: 0,
+          payments: 0,
+          returned: 0
+        };
+      }
+      skuSum[item.SKU].orders += 1;
+      skuSum[item.SKU].revenue += item.totalSettlement;
+      skuSum[item.SKU].purchase += item.purchase;
+      skuSum[item.SKU].profit += item.profit;
+      skuSum[item.SKU].payments += item.paymentCount;
+      if (isReturned) skuSum[item.SKU].returned += 1;
+    });
+
+    setSummary(categorySummary);
+    setSkuSummary(skuSum);
+  };
+
+  const totalRevenue = mergedData.reduce((a, b) => a + b.totalSettlement, 0);
+  const totalProfit = mergedData.reduce((a, b) => a + b.profit, 0);
+  const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
+   const totalReturned = mergedData.filter((order) => 
+    order.paymentDetails.some((p) => {
+      const status = p.status.toLowerCase().trim();
+      return status === "return" || status === "returned";
+    })
+  ).length;
+  const overallReturnRate = mergedData.length > 0 ? ((totalReturned / mergedData.length) * 100).toFixed(1) : 0;
 
   return (
-
-    <div className="container">
-      <h1 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <img src="/D-com-bg.png" alt="logo" style={{ width: "60px", height: "55px" }} />
-        P/L Dashboard
+    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px", fontFamily: "system-ui, sans-serif" }}>
+      <h1 style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "30px" }}>
+        📊 Multi-File P/L Dashboard
       </h1>
-      {step === "upload" && (
-        <div>
-          <input type="file" accept=".csv , .xlsx" onChange={handleFileUpload} />
-          {error && <p style={{ color: "red" }}>{error}</p>}
-        </div>
-      )}
 
-      {error ? (
-        <div style={{
-          backgroundColor: "#ffe6e6",
-          borderLeft: "5px solid #ff4d4d",
-          padding: "15px 20px",
-          marginBottom: "20px",
-          borderRadius: "8px",
-          color: "#990000",
-          fontSize: "16px",
-          display: "flex",
-          alignItems: "center",
-          gap: "10px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
-        }}>
-          <span style={{ fontSize: "20px" }}>🚫</span>
-          <span>{error}</span>
+      {step === "upload" && (
+        <div style={{ background: "#f9f9f9", padding: "30px", borderRadius: "12px" }}>
+          <div style={{ marginBottom: "25px" }}>
+            <h3>📋 Step 1: Upload Order File</h3>
+            <input 
+              type="file" 
+              accept=".csv,.xlsx" 
+              onChange={handleOrderFileUpload}
+              style={{ padding: "10px", fontSize: "14px" }}
+            />
+            {orderData.length > 0 && (
+              <p style={{ color: "green", marginTop: "10px" }}>✅ {orderData.length} orders loaded</p>
+            )}
+          </div>
+
+          <div style={{ marginBottom: "25px" }}>
+            <h3>💳 Step 2: Upload Payment Files (Multiple)</h3>
+            <input 
+              type="file" 
+              accept=".csv,.xlsx" 
+              multiple
+              onChange={handlePaymentFilesUpload}
+              style={{ padding: "10px", fontSize: "14px" }}
+            />
+            {processedPayments.length > 0 && (
+              <p style={{ color: "green", marginTop: "10px" }}>✅ {processedPayments.length} payment records loaded from {paymentFiles.length} files</p>
+            )}
+          </div>
+
+          {orderData.length > 0 && processedPayments.length > 0 && (
+            <button 
+              onClick={() => setStep("custom-cost")}
+              style={{
+                background: "#4CAF50",
+                color: "white",
+                padding: "12px 24px",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "16px",
+                fontWeight: "600"
+              }}
+            >
+              Continue to Cost Setup →
+            </button>
+          )}
+
+          {error && <p style={{ color: "red", marginTop: "15px" }}>{error}</p>}
         </div>
-      ) : data && data.length === 0 ? (
-        <div style={{ padding: "20px", background: "#f0f0f0", borderRadius: "8px", marginTop: "20px", textAlign: "center" }}>
-          <h2>📂 No Data Found</h2>
-          <p>Please upload a valid CSV file to continue.</p>
-        </div>
-      ) : (
-        <h2>🚀 Data Loaded!</h2>
       )}
 
       {step === "custom-cost" && (
-
-        <div className="custom-cost-form">
-          <h2>🧾 Enter Custom Purchase Cost per SKU</h2>
-
-          {/* Default Cost Setter */}
-          <div className="default-cost">
-            <label>
-              <strong>💼 Set Default Purchase Cost for All SKUs:</strong>
-              <input
-                type="number"
-                placeholder="e.g. 150"
-                value={defaultCost}
-                onChange={(e) => handleDefaultCostChange(e.target.value)}
-              />
+        <div style={{ background: "#f9f9f9", padding: "30px", borderRadius: "12px" }}>
+          <h2>🧾 Enter Purchase Cost per SKU</h2>
+          
+          <div style={{ marginBottom: "25px", padding: "15px", background: "white", borderRadius: "8px" }}>
+            <label style={{ display: "block", marginBottom: "10px", fontWeight: "600" }}>
+              💼 Set Default Purchase Cost for All SKUs:
             </label>
+            <input
+              type="number"
+              placeholder="e.g. 150"
+              value={defaultCost}
+              onChange={(e) => handleDefaultCostChange(e.target.value)}
+              style={{ padding: "10px", fontSize: "14px", width: "200px", borderRadius: "6px", border: "1px solid #ddd" }}
+            />
           </div>
-          <form onSubmit={handleSubmitCosts}>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "15px" }}>
             {skuList.map((sku) => (
-              <div className="form-row" key={sku}>
-                <label className="form-label">
-                  <span className="sku-label">{sku}</span>
+              <div key={sku} style={{ background: "white", padding: "15px", borderRadius: "8px", border: "1px solid #e0e0e0" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <span style={{ fontWeight: "600", color: "#333" }}>{sku}</span>
                   <input
                     type="number"
                     placeholder="Enter purchase cost"
                     value={customCosts[sku] || ""}
                     onChange={(e) => handleCostChange(sku, e.target.value)}
+                    style={{ padding: "8px", fontSize: "14px", borderRadius: "6px", border: "1px solid #ddd" }}
                   />
                 </label>
               </div>
             ))}
-            <button className="submit-btn" type="submit">✅ Submit Purchase Costs</button>
-          </form>
+          </div>
+
+          <button 
+            onClick={mergeOrdersWithPayments}
+            style={{
+              background: "#2196F3",
+              color: "white",
+              padding: "12px 24px",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontSize: "16px",
+              fontWeight: "600",
+              marginTop: "25px"
+            }}
+          >
+            ✅ Generate Report
+          </button>
         </div>
       )}
 
-
       {step === "report" && (
-        <>
-          <div id="report-content">
-            <div className="cards">
-              <div className="card">
-                <div className="card-title">📦 Total Orders</div>
-                <div className="card-value">{deliveredReturnRto.deliveredReturnRtoCount}</div>
-              </div>
-              <div className="card">
-                <div className="card-title">📦 Total Orders</div>
-                <div className="card-value">{deliveredReturnRto.deliveredCount}</div>
-              </div>
-              
-
-              <div className="card">
-                <div className="card-title">📈 Profit/Piece</div>
-                <div className="card-value">
-                  ₹{(data.reduce((a, b) => a + b.profit, 0) / deliveredReturnRto.deliveredReturnRtoCount).toFixed(2)}
-                </div>
-              </div>
-              <div className="card">
-                <div className="card-title">💸 Return Charges</div>
-                <div className="card-value">₹{returnInfo.returnCharge.toFixed(2)}</div>
-              </div>
-
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "15px", marginBottom: "30px" }}>
+            <div style={{ background: "#e3f2fd", padding: "20px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📦 Total Orders</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#1976d2" }}>{mergedData.length}</div>
             </div>
-            <div className="cards">
-              <div className="card">
-                <div className="card-title">📦🔁 Total Returns</div>
-                <div className="card-value">{returnInfo.returnCount}</div>
-                <div className="card-subtext" style={{ color: returnRateColor }}>📉 {returnRate}% of Orders</div>
-              </div>
-              <div className="card">
-                <div className="card-title">💰 Total Profit (Payment - Return + Compensation)</div>
-                <div className="card-value">₹{totalProfit.toFixed(2)}</div>
-                <div className="card-subtext" style={{ color: profitMarginColor }}>📈 {profitMargin}% of Total Revenue</div>
-              </div>
-
+            <div style={{ background: "#e8f5e9", padding: "20px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💰 Total Revenue</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#388e3c" }}>₹{totalRevenue.toFixed(2)}</div>
             </div>
-            <div className="cards">
-              <div className="card">
-                <div className="card-title">🚚 RTO Return</div>
-                <div className="card-value">{deliveredReturnRto.rtoCount}</div>
-              </div>
-              <div className="card">
-                <div className="card-title">🕵️ Compensation & Recoveries</div>
-                <div className="card-value">₹{unknownStatusTotal.toFixed(2)}</div>
-              </div>
+            <div style={{ background: "#fff3e0", padding: "20px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💸 Total Profit</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#f57c00" }}>₹{totalProfit.toFixed(2)}</div>
             </div>
-
-            <div className="chart" style={{ height: "300px" }}>
-              <Bar
-                data={{
-                  labels: Object.keys(summary),
-                  datasets: [
-                    {
-                      label: "Net Profit",
-                      data: Object.values(summary).map((v) => v.profit),
-                      backgroundColor: "rgba(75, 192, 192, 0.6)",
-                    },
-                  ],
-                }}
-                options={{ responsive: true }}
-              />
+            <div style={{ background: "#f3e5f5", padding: "20px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📈 Profit Margin</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#7b1fa2" }}>{profitMargin}%</div>
             </div>
+             <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 Customer Returns</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: overallReturnRate > 10 ? "#d32f2f" : "#388e3c" }}>{overallReturnRate}%</div>
+              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{totalReturned} of {mergedData.length} orders</div>
+            </div>
+          </div>
+          <div style={{ background: "white", padding: "25px", borderRadius: "12px", marginBottom: "30px", border: "1px solid #e0e0e0" }}>
+            <h3 style={{ marginTop: 0, marginBottom: "15px", color: "#333" }}>📊 Return Calculation Method</h3>
+            <div style={{ background: "#f5f5f5", padding: "15px", borderRadius: "8px", fontSize: "14px", lineHeight: "1.6" }}>
+              <p style={{ margin: "0 0 10px 0" }}>
+                <strong>How returns are counted:</strong>
+              </p>
+              <ul style={{ margin: "0", paddingLeft: "20px" }}>
+                <li>Returns are tracked at the <strong>order level</strong>, not payment entry level</li>
+                <li>An order is marked as "returned" if <strong>any payment entry</strong> has status: <code style={{ background: "#fff", padding: "2px 6px", borderRadius: "4px" }}>return</code>, <code style={{ background: "#fff", padding: "2px 6px", borderRadius: "4px" }}>returned</code></li>
+                <li>Each order is counted only <strong>once</strong> as returned, even if multiple payment entries show return status</li>
+                <li>Return % = (Returned Orders / Total Orders) × 100</li>
+              </ul>
+            </div>
+          </div>
 
+          <div style={{ background: "white", padding: "20px", borderRadius: "12px", marginBottom: "30px", height: "350px" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={Object.entries(summary).map(([name, val]) => ({ 
+                name, 
+                profit: val.profit 
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip formatter={(value) => `₹${value.toFixed(2)}`} />
+                <Legend />
+                <Bar dataKey="profit" fill="#4bc0c0" name="Net Profit" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
-            <table>
+          <h2>📦 SKU-wise Summary</h2>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", background: "white", marginBottom: "30px" }}>
               <thead>
-                <tr>
-                  <th>Category</th>
-                  <th>Orders</th>
-                  <th>Revenue</th>
-                  <th>Purchase</th>
-                  <th>Profit</th>
+                <tr style={{ background: "#f5f5f5" }}>
+                  <th style={{ padding: "12px", textAlign: "left", borderBottom: "2px solid #ddd" }}>SKU</th>
+                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Orders</th>
+                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Payments</th>
+                      <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Returned</th>
+                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Return %</th>
+                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Revenue</th>
+                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Purchase</th>
+                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Profit</th>
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(summary).map(([cat, val]) => (
-                  <tr key={cat}>
-                    <td>{cat}</td>
-                    <td>{val.orders}</td>
-                    <td>₹{val.revenue.toFixed(2)}</td>
-                    <td>{(Number(val.purchase) || 0).toFixed(2)}</td>
-                    <td>₹{val.profit.toFixed(2)}</td>
+                {Object.entries(skuSummary).map(([sku, val]) => { const returnRate = val.orders > 0 ? ((val.returned / val.orders) * 100).toFixed(1) : 0;
+                  return (
+                  
+                  <tr key={sku} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "12px" }}>{sku}</td>
+                    <td style={{ padding: "12px", textAlign: "right" }}>{val.orders}</td>
+                    <td style={{ padding: "12px", textAlign: "right" }}>{val.payments}</td>
+                     <td style={{ padding: "12px", textAlign: "right" }}>{val.returned}</td>
+                      <td style={{ padding: "12px", textAlign: "right", color: returnRate > 10 ? "#d32f2f" : "#388e3c", fontWeight: "600" }}>
+                        {returnRate}%
+                      </td>
+                    <td style={{ padding: "12px", textAlign: "right" }}>₹{val.revenue.toFixed(2)}</td>
+                    <td style={{ padding: "12px", textAlign: "right" }}>₹{val.purchase.toFixed(2)}</td>
+                    <td style={{ padding: "12px", textAlign: "right", color: val.profit >= 0 ? "green" : "red", fontWeight: "600" }}>
+                      ₹{val.profit.toFixed(2)}
+                    </td>
+                 \
+                  </tr>
+                )})}
+              </tbody>
+            </table>
+          </div>
+
+          <h2>📋 Order-wise Payment Details</h2>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", background: "white", fontSize: "13px" }}>
+              <thead>
+                <tr style={{ background: "#f5f5f5" }}>
+                  <th style={{ padding: "10px", textAlign: "left", borderBottom: "2px solid #ddd" }}>Sub Order No</th>
+                  <th style={{ padding: "10px", textAlign: "left", borderBottom: "2px solid #ddd" }}>SKU</th>
+                  <th style={{ padding: "10px", textAlign: "left", borderBottom: "2px solid #ddd" }}>Payment Details</th>
+                  <th style={{ padding: "10px", textAlign: "left", borderBottom: "2px solid #ddd" }}>Purchase</th>
+                  <th style={{ padding: "10px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Total Settlement</th>
+                  <th style={{ padding: "10px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Profit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mergedData.slice(0, mergedData.length).map((order, idx) => (
+                  <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "10px" }}>{order.orderId}</td>
+                    <td style={{ padding: "10px" }}>{order.SKU}</td>
+                    <td style={{ padding: "10px" }}>
+                      {order.paymentDetails.length > 0 ? (
+                        <div>
+                          {order.paymentDetails.map((p, i) => (
+                            <div key={i} style={{ marginBottom: "4px", fontSize: "12px" }}>
+                              {p.date} - {p.status} - ₹{p.amount.toFixed(2)}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: "#999" }}>No payments found</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px" }}>
+                      {order.hasValidPayment ? (
+  `₹${order.purchase.toFixed(2)}`
+) : (
+  <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>
+)}
+                    </td>
+                    <td style={{ padding: "10px", textAlign: "right" }}>₹{order.totalSettlement.toFixed(2)}</td>
+                    <td style={{ padding: "10px", textAlign: "right", color: order.profit >= 0 ? "green" : "red", fontWeight: "600" }}>
+                      ₹{order.profit.toFixed(2)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div style={{ height: '20px' }}></div>
-            <h2>📦 SKU-wise Summary</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>SKU / Product</th>
-                  <th>Delivered</th>
-
-                  <th>Returned</th>
-                  <th>RTO</th>
-                  <th>Revenue</th>
-                  <th>Purchase</th>
-                  <th>Return Charge</th>
-                  <th>Net Profit/Loss</th>
-                  <th>Customer Return(%)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(skuSummary).map(([sku, val]) => {
-
-                  const totalOrders = val.delivered + val.returned + val.rto;
-                  const returnPercent = totalOrders > 0 ? (val.returned / totalOrders) * 100 : 0;
-                  const colored = returnPercent > 15 ? "red" : "green";
-
-
-                  return (
-
-                    <tr key={sku}>
-                      <td>{sku}</td>
-                      <td>{val.delivered}</td>
-
-                      <td>{val.returned}</td>
-                      <td>{val.rto}</td>
-                      <td>₹{val.settlement.toFixed(2)}</td>
-                      <td>{(Number(val.purchase) || 0).toFixed(2)}</td>
-                      <td>₹{val.returnCharge.toFixed(2)}</td>
-                      <td>₹{val.profit.toFixed(2)}</td>
-                      <td style={{ color: colored }}>
-                        {returnPercent.toFixed(1)}%
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-
-            {/* <p className="note">
-              * Only 'Delivered' orders counted. Purchase cost: ₹360 (Saree), ₹140 (Money Bank).
-            </p> */}
-
-            <div className="ai-insights">
-              <h2>🧠 AI Insights</h2>
-              <ul>
-                {Object.entries(skuSummary)
-                  .sort(([, a], [, b]) => b.profit - a.profit)
-                  .slice(0, 3)
-                  .map(([sku], index) => (
-                    <li key={sku}>#{index + 1} 🥇 Top Profit SKU: <strong>{sku}</strong> (₹{skuSummary[sku].profit.toFixed(2)})</li>
-                  ))}
-
-                {Object.entries(skuSummary)
-                  .sort(([, a], [, b]) => b.returned - a.returned)
-                  .slice(0, 3)
-                  .map(([sku], index) => (
-                    <li key={sku}>#{index + 1} 🔁 Most Returned SKU: <strong>{sku}</strong> ({skuSummary[sku].returned} returns)</li>
-                  ))}
-
-                {(() => {
-                  const topCategory = Object.entries(summary).sort(([, a], [, b]) => b.profit - a.profit)[0];
-                  return topCategory ? (
-                    <li>🏆 Best Category: <strong>{topCategory[0]}</strong> (₹{topCategory[1].profit.toFixed(2)} profit)</li>
-                  ) : null;
-                })()}
-
-                {(() => {
-                  const worst = Object.entries(skuSummary).sort(([, a], [, b]) => a.profit - b.profit)[0];
-                  return worst ? (
-                    <li>🔻 Lowest Performing SKU: <strong>{worst[0]}</strong> (₹{worst[1].profit.toFixed(2)} profit)</li>
-                  ) : null;
-                })()}
-              </ul>
-            </div>
-
           </div>
-          <div style={{ height: '20px' }}></div>
-          <button className="fancy-button" onClick={downloadPDF}>
-            📄 Download Report
-          </button>
-
-        </>
+          {/* {mergedData.length > 50 && (
+            <p style={{ textAlign: "center", color: "#666", marginTop: "15px" }}>
+              Showing first 50 orders. Total: {mergedData.length}
+            </p>
+          )} */}
+        </div>
       )}
     </div>
   );
