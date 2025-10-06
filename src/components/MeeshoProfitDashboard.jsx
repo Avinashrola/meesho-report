@@ -218,13 +218,13 @@ export default function MeeshoProfitDashboard() {
   const overallReturnRate = mergedData.length > 0 ? ((totalReturned / mergedData.length) * 100).toFixed(1) : 0;
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px", fontFamily: "system-ui, sans-serif" }}>
-      <h1 style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "30px" }}>
+    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "5px", fontFamily: "system-ui, sans-serif" }}>
+      {/* <h1 style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "30px" }}>
         📊 Multi-File P/L Dashboard
-      </h1>
+      </h1> */}
 
       {step === "upload" && (
-        <div style={{ background: "#f9f9f9", padding: "30px", borderRadius: "12px" }}>
+        <div style={{ background: "#f9f9f9", padding: "10px", borderRadius: "12px" }}>
           <div style={{ marginBottom: "25px" }}>
             <h3>📋 Step 1: Upload Order File</h3>
             <input 
@@ -239,7 +239,7 @@ export default function MeeshoProfitDashboard() {
           </div>
 
           <div style={{ marginBottom: "25px" }}>
-            <h3>💳 Step 2: Upload Payment Files (Multiple)</h3>
+            <h3>💳 Step 2: Upload Payment Files (Multiple Allowed)</h3>
             <input 
               type="file" 
               accept=".csv,.xlsx" 

@@ -10,9 +10,9 @@ export default function App() {
         Meesho Business Dashboard
       </h1>
 
+ <MeeshoProfitDashboard />
 
-
-      <Tabs defaultValue="profit">
+      {/* <Tabs defaultValue="profit">
         <TabsTrigger value="profit">🧾 Profit Report</TabsTrigger>
         <TabsTrigger value="orders">📦 Order Analytics</TabsTrigger>
 
@@ -24,7 +24,7 @@ export default function App() {
         <TabsContent value="orders">
           <OrderAnalytics />
         </TabsContent>
-      </Tabs>
+      </Tabs> */}
     </div>
   );
 }
