@@ -5,7 +5,7 @@ import OrderAnalytics from "./components/OrderAnalytics";
 export default function App() {
   return (
     <div className="p-4">
-      <h1 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <h1 style={{ display: "flex", alignItems: "center", gap: "8px" , fontFamily: "Urbanist"}}>
         <img src="/D-com-bg.png" alt="logo" style={{ width: "65px", height: "60px" }} />
         Meesho Business Dashboard
       </h1>
