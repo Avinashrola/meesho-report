@@ -10,6 +10,21 @@ function getCategory(productName) {
   return "Other";
 }
 
+function formatIndianCurrency(amount) {
+  const num = parseFloat(amount);
+  if (isNaN(num)) return "₹0";
+  
+  const [integerPart, decimalPart] = num.toFixed(2).split(".");
+  const lastThree = integerPart.slice(-3);
+  const remaining = integerPart.slice(0, -3);
+  
+  const formatted = remaining.length > 0 
+    ? remaining.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + lastThree
+    : lastThree;
+  
+  return `₹${formatted}.${decimalPart}`;
+}
+
 export default function MeeshoProfitDashboard() {
   const [orderData, setOrderData] = useState([]);
   const [paymentFiles, setPaymentFiles] = useState([]);
@@ -134,6 +149,7 @@ export default function MeeshoProfitDashboard() {
 
       const sku = order["SKU"];
       const purchase = hasValidPayment ? (Number(customCosts[sku]) || 0) : 0;
+      const orderStatus = order["Reason for Credit Entry"];
 
       const category = getCategory(order["Product Name"]);
       const profit = totalSettlement - purchase;
@@ -144,6 +160,7 @@ export default function MeeshoProfitDashboard() {
         sku,
         category,
         totalSettlement,
+        orderStatus,
         purchase,
         profit,
         paymentDetails,
@@ -164,9 +181,9 @@ export default function MeeshoProfitDashboard() {
     console.log(data);
 
     data.forEach((item) => {
-      const isReturned = item.paymentDetails.some((p) => {
+      const isCustomerReturned = item.paymentDetails.some((p) => {
         const status = p.status.toLowerCase().trim();
-        return status === "return" || status === "returned" || status === "rto";
+        return status === "return" || status === "returned";
       });
 
 
@@ -179,7 +196,7 @@ export default function MeeshoProfitDashboard() {
           returned: 0
         };
       }
-      if (isReturned) categorySummary[item.category].returned += 1;
+      if (isCustomerReturned) categorySummary[item.category].returned += 1;
       categorySummary[item.category].orders += 1;
       categorySummary[item.category].revenue += item.totalSettlement;
       categorySummary[item.category].purchase += item.purchase;
@@ -200,7 +217,7 @@ export default function MeeshoProfitDashboard() {
       skuSum[item.SKU].purchase += item.purchase;
       skuSum[item.SKU].profit += item.profit;
       skuSum[item.SKU].payments += item.paymentCount;
-      if (isReturned) skuSum[item.SKU].returned += 1;
+      if (isCustomerReturned) skuSum[item.SKU].returned += 1;
     });
 
     setSummary(categorySummary);
@@ -216,6 +233,19 @@ export default function MeeshoProfitDashboard() {
       return status === "return" || status === "returned";
     })
   ).length;
+  const rtoReturned = mergedData.filter((order) =>
+    order.paymentDetails.some((p) => {
+      const status = p.status.toLowerCase().trim();
+      return status === "rto" || status === "RTO";
+    })
+  ).length;
+  const cancelled = mergedData.filter((order) =>
+    // order.map((p) => {
+    {  const status = order.orderStatus.toLowerCase().trim();
+      return status === "cancelled" || status === "CANCELLED";}
+    // }
+    // )
+  ).length;
   const totalReturnCharges = mergedData.reduce((sum, order) => {
     const returnCharge = order.paymentDetails
       .filter((p) => {
@@ -226,6 +256,8 @@ export default function MeeshoProfitDashboard() {
     return sum + returnCharge;
   }, 0);
   const overallReturnRate = mergedData.length > 0 ? ((totalReturned / mergedData.length) * 100).toFixed(1) : 0;
+  const rtoReturnRate = mergedData.length > 0 ? ((rtoReturned / mergedData.length) * 100).toFixed(1) : 0;
+  const cancelledRate = mergedData.length > 0 ? ((cancelled / mergedData.length) * 100).toFixed(1) : 0;
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "5px", fontFamily: "'Urbanist', sans-serif" }}>
@@ -349,15 +381,25 @@ export default function MeeshoProfitDashboard() {
             </div>
             <div style={{ background: "#e8f5e9", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💰 Total Revenue</div>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#388e3c" }}>₹{totalRevenue.toFixed(2)}</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#388e3c" }}>{formatIndianCurrency(totalRevenue)}</div>
             </div>
             <div style={{ background: "#fff3e0", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💸 Total Profit</div>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#f57c00" }}>₹{totalProfit.toFixed(2)}</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#f57c00" }}>{formatIndianCurrency(totalProfit)}</div>
             </div>
             <div style={{ background: "#f3e5f5", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📈 Profit Margin</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#7b1fa2" }}>{profitMargin}%</div>
+            </div>
+            <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 Cancelled Orders</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: overallReturnRate > 10 ? "#d32f2f" : "#388e3c" }}>{cancelledRate}%</div>
+              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{cancelled} of {mergedData.length} orders</div>
+            </div>
+            <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 RTO Returns</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: overallReturnRate > 10 ? "#d32f2f" : "#388e3c" }}>{rtoReturnRate}%</div>
+              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{rtoReturned} of {mergedData.length} orders</div>
             </div>
             <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 Customer Returns</div>
@@ -366,7 +408,7 @@ export default function MeeshoProfitDashboard() {
             </div>
             <div style={{ background: "#fce4ec", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💔 Return Charges</div>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#c21818ff" }}>₹{totalReturnCharges.toFixed(0)}</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#c21818ff" }}>{formatIndianCurrency(totalReturnCharges)}</div>
               <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>Total deductions from returns</div>
             </div>
           </div>
@@ -493,7 +535,7 @@ export default function MeeshoProfitDashboard() {
                           ))}
                         </div>
                       ) : (
-                        <span style={{ color: "#999" }}>No payments found</span>
+                        <span style={{ color: "#999" }}>N/A</span>
                       )}
                     </td>
                         <td style={{ padding: "10px" }}>
@@ -506,7 +548,7 @@ export default function MeeshoProfitDashboard() {
                           ))}
                         </div>
                       ) : (
-                        <span style={{ color: "#999" }}>No payments found</span>
+                        <span style={{ color: "#999" }}>N/A</span>
                       )}
                     </td><td style={{ padding: "10px" }}>
                       {order.paymentDetails.length > 0 ? (
@@ -517,8 +559,8 @@ export default function MeeshoProfitDashboard() {
                             </div>
                           ))}
                         </div>
-                      ) : (
-                        <span style={{ color: "#999" }}>No payments found</span>
+                      ) : order.paymentDetails.length == 0 ? (<span style={{ color: "orange" }}>{order.orderStatus}</span>):  (
+                        <span style={{ color: "#999" }}>N/A</span>
                       )}
                     </td>
                     <td style={{ padding: "10px" }}>
@@ -538,13 +580,13 @@ export default function MeeshoProfitDashboard() {
                  <tr style={{ background: "#f5f5f5", borderTop: "3px solid #333" }}>
                   <td colSpan="6" style={{ padding: "12px", fontWeight: "bold", fontSize: "14px" }}>TOTAL</td>
                   <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>
-                    ₹{mergedData.reduce((sum, order) => sum + order.totalSettlement, 0).toFixed(2)}
+                    {formatIndianCurrency(mergedData.reduce((sum, order) => sum + order.totalSettlement, 0))}
                   </td>
                   <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>
-                    ₹{mergedData.reduce((sum, order) => sum + order.purchase, 0).toFixed(2)}
+                    {formatIndianCurrency(mergedData.reduce((sum, order) => sum + order.purchase, 0))}
                   </td>
                   <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalProfit >= 0 ? "green" : "red" }}>
-                    ₹{totalProfit.toFixed(2)}
+                    {formatIndianCurrency(totalProfit)}
                   </td>
                 </tr>
               </tbody>
