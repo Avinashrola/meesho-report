@@ -114,6 +114,48 @@ export default function MeeshoProfitDashboard() {
     setCustomCosts((prev) => ({ ...prev, [sku]: parseFloat(value) || 0 }));
   };
 
+  const exportToExcel = () => {
+    const exportData = mergedData.map((order) => ({
+      "Sub Order No": order.orderId,
+      "SKU": order.sku,
+      "Product Name": order["Product Name"] || "",
+    
+      "Total Settlement": order.totalSettlement.toFixed(2),
+      "Purchase Cost": order.purchase.toFixed(2),
+      "Profit/Loss": order.profit.toFixed(2),
+      "order Date": order.paymentDetails.map((p) => p.orderDate).join(" | "),
+      "Payment Date": order.paymentDetails.map((p) => p.paymentDate).join(" | "),
+      "Order Status": order.paymentDetails.map((p) => p.status).join(" | "),
+     
+      // "Payment Details": order.paymentDetails.map((p) => 
+      //   `${p.date} - ${p.status} - ₹${p.amount.toFixed(2)}`
+      // ).join(" | ")
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+
+    // Set column widths
+    const columnWidths = [
+      { wch: 25 }, // Sub Order No
+      { wch: 20 }, // SKU
+      { wch: 30 }, // Product Name
+      { wch: 18 }, // Total Settlement
+      { wch: 18 }, // Purchase Cost
+      { wch: 15 }, // Profit/Loss
+      { wch: 25 }, // Order Date
+      { wch: 25 }, // payment date
+      { wch: 20 }, // order status
+    ];
+
+    ws['!cols'] = columnWidths;
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Order Details");
+    
+    const fileName = `HISAB-Meesho_Order_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
   const mergeOrdersWithPayments = () => {
     if (!orderData.length || !processedPayments.length) {
       setError("Please upload both order file and payment files");
@@ -246,6 +288,7 @@ export default function MeeshoProfitDashboard() {
     // }
     // )
   ).length;
+
   const totalReturnCharges = mergedData.reduce((sum, order) => {
     const returnCharge = order.paymentDetails
       .filter((p) => {
@@ -258,6 +301,8 @@ export default function MeeshoProfitDashboard() {
   const overallReturnRate = mergedData.length > 0 ? ((totalReturned / mergedData.length) * 100).toFixed(1) : 0;
   const rtoReturnRate = mergedData.length > 0 ? ((rtoReturned / mergedData.length) * 100).toFixed(1) : 0;
   const cancelledRate = mergedData.length > 0 ? ((cancelled / mergedData.length) * 100).toFixed(1) : 0;
+
+  
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "5px", fontFamily: "'Urbanist', sans-serif" }}>
@@ -485,6 +530,33 @@ export default function MeeshoProfitDashboard() {
           </div>
 
           <h2>📋 Order-wise Payment Details</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
+  <div style={{ fontSize: "14px", color: "#666" }}>
+    Total {mergedData.length} orders
+  </div>
+  <button
+    onClick={exportToExcel}
+    style={{
+      background: "#4CAF50",
+      color: "white",
+      padding: "10px 20px",
+      border: "none",
+      borderRadius: "8px",
+      cursor: "pointer",
+      fontSize: "14px",
+      fontWeight: "600",
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+      transition: "all 0.3s ease"
+    }}
+    onMouseOver={(e) => e.target.style.background = "#45a049"}
+    onMouseOut={(e) => e.target.style.background = "#4CAF50"}
+  >
+    📥 Export to Excel
+  </button>
+</div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", background: "white", fontSize: "13px" }}>
               <thead>
