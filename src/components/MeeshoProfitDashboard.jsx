@@ -37,17 +37,26 @@ export default function MeeshoProfitDashboard() {
   const [skuSummary, setSkuSummary] = useState({});
   const [mergedData, setMergedData] = useState([]);
   const [error, setError] = useState(null);
+  const [totalAdsCost, setTotalAdsCost] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+const [loadingMessage, setLoadingMessage] = useState("");
+const [filterSKU, setFilterSKU] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [sortField, setSortField] = useState("");
+  const [sortDirection, setSortDirection] = useState("asc");
 
-  const parseExcelOrCSV = (file, callback) => {
+  const parseExcelOrCSV = (file, callback,sheetIndex = 1) => {
     const isExcel = file.name.endsWith(".xlsx");
     const isCSV = file.name.endsWith(".csv");
+
+    
 
     if (isExcel) {
       const reader = new FileReader();
       reader.onload = (evt) => {
         const data = new Uint8Array(evt.target.result);
         const workbook = XLSX.read(data, { type: "array" });
-        const sheetName = workbook.SheetNames[1];
+        const sheetName = workbook.SheetNames[sheetIndex] || workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const allData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
         const headers = allData[1] || allData[0];
@@ -75,29 +84,74 @@ export default function MeeshoProfitDashboard() {
     const file = e.target.files[0];
     if (!file) return;
 
+     setIsLoading(true);
+  setLoadingMessage("Loading order file...");
+
     parseExcelOrCSV(file, (data) => {
       setOrderData(data);
       const skus = [...new Set(data.map((r) => r["SKU"]))].filter(Boolean);
       setSkuList(skus);
+        setIsLoading(false);
+      setLoadingMessage("");
 
     });
   };
 
   const handlePaymentFilesUpload = (e) => {
     const files = Array.from(e.target.files);
+    setIsLoading(true);
+  setLoadingMessage(`Processing ${files.length} payment file(s)...`);
     const allPayments = [];
+    let adsTotal = 0;
     let filesProcessed = 0;
 
     files.forEach((file) => {
+      // Parse payment data from sheet index 1
       parseExcelOrCSV(file, (data) => {
         allPayments.push(...data);
         filesProcessed++;
+        
+        // Parse ads cost data from sheet index 2
+        if (file.name.endsWith(".xlsx")) {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            const data = new Uint8Array(evt.target.result);
+            const workbook = XLSX.read(data, { type: "array" });
+            
+            // Check if there's a second sheet for ads
+            if (workbook.SheetNames.length > 2) {
+              const adsSheetName = workbook.SheetNames[2];
+              const adsSheet = workbook.Sheets[adsSheetName];
+              const adsData = XLSX.utils.sheet_to_json(adsSheet, { header: 1, defval: "" });
 
-        if (filesProcessed === files.length) {
-          setProcessedPayments(allPayments);
-          setPaymentFiles(files);
+              console.log(adsData);
+              
+              // Sum up ads cost (assuming it's in a specific column)
+              adsData.slice(1).forEach((row) => {
+                const cost = parseFloat(row[7]) || 0; // Adjust index based on your sheet structure
+                adsTotal += cost;
+              });
+            }
+            
+            if (filesProcessed === files.length) {
+              setProcessedPayments(allPayments);
+              setPaymentFiles(files);
+              setTotalAdsCost(adsTotal);
+              setIsLoading(false);
+            setLoadingMessage("");
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } else {
+          if (filesProcessed === files.length) {
+            setProcessedPayments(allPayments);
+            setPaymentFiles(files);
+            setTotalAdsCost(adsTotal);
+            setIsLoading(false);
+            setLoadingMessage("");
+          }
         }
-      });
+      }, 1);
     });
   };
 
@@ -164,7 +218,11 @@ export default function MeeshoProfitDashboard() {
 
     console.log(orderData);
 
-    const merged = orderData.map((order) => {
+     setIsLoading(true);
+     setLoadingMessage(`Processing ${orderData.length} orders...`);
+
+  setTimeout(() =>{  const merged = orderData.map((order, index) => {
+      setLoadingMessage(`Processing orders... ${index}/${orderData.length}`);
       const orderId = order["Sub Order No"] || order["sub order no"];
 
       const matchingPayments = processedPayments.filter((payment) => {
@@ -214,8 +272,12 @@ export default function MeeshoProfitDashboard() {
     setMergedData(merged);
     calculateSummaries(merged);
     console.log("sku list ===== " + skuList);
-    setStep("report");
+     setIsLoading(false);
+            setLoadingMessage("");
+    setStep("report");},500)
+    
   };
+
 
   const calculateSummaries = (data) => {
     const categorySummary = {};
@@ -268,7 +330,9 @@ export default function MeeshoProfitDashboard() {
 
   const totalRevenue = mergedData.reduce((a, b) => a + b.totalSettlement, 0);
   const totalProfit = mergedData.reduce((a, b) => a + b.profit, 0);
+  const netProfitAfterAds = totalProfit + totalAdsCost;
   const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
+  const netProfitMargin = totalRevenue > 0 ? ((netProfitAfterAds / totalRevenue) * 100).toFixed(1) : 0;
   const totalReturned = mergedData.filter((order) =>
     order.paymentDetails.some((p) => {
       const status = p.status.toLowerCase().trim();
@@ -302,13 +366,110 @@ export default function MeeshoProfitDashboard() {
   const rtoReturnRate = mergedData.length > 0 ? ((rtoReturned / mergedData.length) * 100).toFixed(1) : 0;
   const cancelledRate = mergedData.length > 0 ? ((cancelled / mergedData.length) * 100).toFixed(1) : 0;
 
-  
+  // Filter and sort orders
+  const getFilteredAndSortedOrders = () => {
+    let filtered = [...mergedData];
+
+    // Apply SKU filter
+    if (filterSKU) {
+      filtered = filtered.filter((order) => 
+        order.sku?.toLowerCase().includes(filterSKU.toLowerCase())
+      );
+    }
+
+    // Apply status filter
+    if (filterStatus) {
+      filtered = filtered.filter((order) => {
+        if (filterStatus === "returned") {
+          return order.paymentDetails.some((p) => {
+            const status = p.status.toLowerCase().trim();
+            return status === "return" || status === "returned" || status === "rto";
+          });
+        } else if (filterStatus === "valid") {
+          return order.hasValidPayment;
+        }
+        return true;
+      });
+    }
+
+    // Apply sorting
+    if (sortField) {
+      filtered.sort((a, b) => {
+        let aVal = a[sortField];
+        let bVal = b[sortField];
+
+        if (sortField === "totalSettlement" || sortField === "purchase" || sortField === "profit") {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
+        }
+
+        if (sortDirection === "asc") {
+          return aVal > bVal ? 1 : -1;
+        } else {
+          return aVal < bVal ? 1 : -1;
+        }
+      });
+    }
+
+    return filtered;
+  };
+
+  const filteredOrders = getFilteredAndSortedOrders();
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const resetFilters = () => {
+    setFilterSKU("");
+    setFilterStatus("");
+    setSortField("");
+    setSortDirection("asc");
+  };
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "5px", fontFamily: "'Urbanist', sans-serif" }}>
       {/* <h1 style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "30px" }}>
         📊 Multi-File P/L Dashboard
       </h1> */}
+
+      {isLoading && (
+  <div style={{
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "rgba(0, 0, 0, 0.7)",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 9999,
+    color: "white"
+  }}>
+    <div style={{
+      width: "60px",
+      height: "60px",
+      border: "6px solid #f3f3f3",
+      borderTop: "6px solid #4CAF50",
+      borderRadius: "50%",
+      animation: "spin 1s linear infinite"
+    }}></div>
+    <p style={{ marginTop: "20px", fontSize: "18px", fontWeight: "600" }}>{loadingMessage}</p>
+    <style>{`
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `}</style>
+  </div>
+)}
 
       {step === "upload" && (
         <div style={{ background: "#f9f9f9", padding: "10px", borderRadius: "12px" }}>
@@ -412,7 +573,7 @@ export default function MeeshoProfitDashboard() {
 
             }}
           >
-            ✅ Generate Report
+            {isLoading ? "⏳ Processing..." : "✅ Generate Report"}
           </button>
         </div>
       )}
@@ -429,12 +590,17 @@ export default function MeeshoProfitDashboard() {
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#388e3c" }}>{formatIndianCurrency(totalRevenue)}</div>
             </div>
             <div style={{ background: "#fff3e0", padding: "20px", borderRadius: "12px" }}>
-              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💸 Total Profit</div>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#f57c00" }}>{formatIndianCurrency(totalProfit)}</div>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💸 Net Profit</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#f57c00" }}>{formatIndianCurrency(netProfitAfterAds)}</div>
             </div>
             <div style={{ background: "#f3e5f5", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📈 Profit Margin</div>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#7b1fa2" }}>{profitMargin}%</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#7b1fa2" }}>{netProfitMargin}%</div>
+            </div>
+            <div style={{ background: "#fff9c4", padding: "20px", borderRadius: "12px" }}>
+              <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📢 Total Ads Cost</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#f57f17" }}>{formatIndianCurrency(totalAdsCost)}</div>
+              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>Marketing expenses</div>
             </div>
             <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 Cancelled Orders</div>
@@ -531,9 +697,9 @@ export default function MeeshoProfitDashboard() {
 
           <h2>📋 Order-wise Payment Details</h2>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
-  <div style={{ fontSize: "14px", color: "#666" }}>
-    Total {mergedData.length} orders
-  </div>
+ <div style={{ fontSize: "14px", color: "#666" }}>
+              Showing {filteredOrders.length} of {mergedData.length} orders
+            </div>
   <button
     onClick={exportToExcel}
     style={{
@@ -557,6 +723,83 @@ export default function MeeshoProfitDashboard() {
     📥 Export to Excel
   </button>
 </div>
+
+{/* Filters */}
+          <div style={{ 
+            background: "#f9f9f9", 
+           
+            borderRadius: "12px", 
+            marginBottom: "10px",
+            display: "flex",
+            gap: "15px",
+            flexWrap: "wrap",
+            alignItems: "end"
+          }}>
+            <div style={{ flex: "1",  minWidth: "100px" }}>
+              <label style={{ display: "block", fontSize: "13px", color: "#666", marginBottom: "5px", fontWeight: "600" }}>
+                🔍 Filter by SKU
+              </label>
+              <input
+                type="text"
+                placeholder="Enter SKU..."
+                value={filterSKU}
+                onChange={(e) => setFilterSKU(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  fontSize: "14px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  outline: "none"
+                }}
+              />
+            </div>
+
+            <div> </div>
+
+             <div style={{ flex: "1",  gap: "10px",minWidth: "100px" }}>
+              <label style={{ display: "block", fontSize: "13px", color: "#666", marginBottom: "5px", fontWeight: "600" }}>
+                📊 Filter by Status
+              </label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  fontSize: "14px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  outline: "none",
+                  background: "white"
+                }}
+              >
+                <option value="">All Orders</option>
+                <option value="valid">Valid Payments Only</option>
+                <option value="returned">Returned Orders Only</option>
+              </select>
+            </div>
+
+             <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
+              <button
+                onClick={resetFilters}
+                style={{
+                  background: "#ff9800",
+                  color: "white",
+                  padding: "10px 20px",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "600"
+                }}
+              >
+                🔄 Reset Filters
+              </button>
+            </div>
+          </div>
+
+
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", background: "white", fontSize: "13px" }}>
               <thead>
@@ -574,7 +817,7 @@ export default function MeeshoProfitDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {mergedData.slice(0, mergedData.length).map((order, idx) => {
+                {filteredOrders.slice(0, filteredOrders.length).map((order, idx) => {
                    const isReturnedOrder = order.paymentDetails.some((p) => {
                     const status = p.status.toLowerCase().trim();
                     return status === "return" || status === "returned";
