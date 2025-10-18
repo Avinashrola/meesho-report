@@ -27,6 +27,7 @@ function formatIndianCurrency(amount) {
 
 export default function MeeshoProfitDashboard() {
   const [orderData, setOrderData] = useState([]);
+  const [orderFiles, setOrderFiles] = useState([]);
   const [paymentFiles, setPaymentFiles] = useState([]);
   const [processedPayments, setProcessedPayments] = useState([]);
   const [step, setStep] = useState("upload");
@@ -81,20 +82,33 @@ const [filterSKU, setFilterSKU] = useState("");
   };
 
   const handleOrderFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
 
-     setIsLoading(true);
-  setLoadingMessage("Loading order file...");
+    setIsLoading(true);
+    setLoadingMessage(`Loading ${files.length} order file(s)...`);
 
-    parseExcelOrCSV(file, (data) => {
-      setOrderData(data);
-      const skus = [...new Set(data.map((r) => r["SKU"]))].filter(Boolean);
-      setSkuList(skus);
-        setIsLoading(false);
-      setLoadingMessage("");
+    const allOrders = [];
+    let filesProcessed = 0;
 
-    });
+    setTimeout(() => {
+      files.forEach((file) => {
+        parseExcelOrCSV(file, (data) => {
+          allOrders.push(...data);
+          filesProcessed++;
+          setLoadingMessage(`Loading order files... ${filesProcessed}/${files.length}`);
+          
+          if (filesProcessed === files.length) {
+            setOrderData(allOrders);
+            const skus = [...new Set(allOrders.map((r) => r["SKU"]))].filter(Boolean);
+            setSkuList(skus);
+            setOrderFiles(files);
+            setIsLoading(false);
+            setLoadingMessage("");
+          }
+        });
+      });
+    }, 100);
   };
 
   const handlePaymentFilesUpload = (e) => {
@@ -474,15 +488,16 @@ const [filterSKU, setFilterSKU] = useState("");
       {step === "upload" && (
         <div style={{ background: "#f9f9f9", padding: "10px", borderRadius: "12px" }}>
           <div style={{ marginBottom: "25px" }}>
-            <h3>📋 Step 1: Upload Order File</h3>
+            <h3>📋 Step 1: Upload Order Files (Multiple)</h3>
             <input
               type="file"
               accept=".csv,.xlsx"
+              multiple
               onChange={handleOrderFileUpload}
               style={{ padding: "10px", fontSize: "14px" }}
             />
             {orderData.length > 0 && (
-              <p style={{ color: "green", marginTop: "10px" }}>✅ {orderData.length} orders loaded</p>
+              <p style={{ color: "green", marginTop: "10px" }}>✅ {orderData.length} orders loaded from {orderFiles.length} file(s)</p>
             )}
           </div>
 
