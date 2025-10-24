@@ -910,10 +910,10 @@ const [filterSKU, setFilterSKU] = useState("");
                  <tr style={{ background: "#f5f5f5", borderTop: "3px solid #333" }}>
                   <td colSpan="6" style={{ padding: "12px", fontWeight: "bold", fontSize: "14px" }}>TOTAL</td>
                   <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>
-                    {formatIndianCurrency(mergedData.reduce((sum, order) => sum + order.totalSettlement, 0))}
+                    {formatIndianCurrency(mergedData.reduce((sum, order) => sum + order.purchase, 0))}
                   </td>
                   <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>
-                    {formatIndianCurrency(mergedData.reduce((sum, order) => sum + order.purchase, 0))}
+                    {formatIndianCurrency(mergedData.reduce((sum, order) => sum + order.totalSettlement, 0))}
                   </td>
                   <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalProfit >= 0 ? "green" : "red" }}>
                     {formatIndianCurrency(totalProfit)}
