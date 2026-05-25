@@ -13,15 +13,15 @@ function getCategory(productName) {
 function formatIndianCurrency(amount) {
   const num = parseFloat(amount);
   if (isNaN(num)) return "₹0";
-  
+
   const [integerPart, decimalPart] = num.toFixed(2).split(".");
   const lastThree = integerPart.slice(-3);
   const remaining = integerPart.slice(0, -3);
-  
-  const formatted = remaining.length > 0 
+
+  const formatted = remaining.length > 0
     ? remaining.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + lastThree
     : lastThree;
-  
+
   return `₹${formatted}.${decimalPart}`;
 }
 
@@ -40,17 +40,20 @@ export default function MeeshoProfitDashboard() {
   const [error, setError] = useState(null);
   const [totalAdsCost, setTotalAdsCost] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-const [loadingMessage, setLoadingMessage] = useState("");
-const [filterSKU, setFilterSKU] = useState("");
+  const [loadingMessage, setLoadingMessage] = useState("");
+  const [filterSKU, setFilterSKU] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [sortField, setSortField] = useState("");
   const [sortDirection, setSortDirection] = useState("asc");
+  const [skuSortField, setSkuSortField] = useState("");
+  const [skuSortDirection, setSkuSortDirection] = useState("asc");
+  const [skuSearchFilter, setSkuSearchFilter] = useState("");
 
-  const parseExcelOrCSV = (file, callback,sheetIndex = 1) => {
+  const parseExcelOrCSV = (file, callback, sheetIndex = 1) => {
     const isExcel = file.name.endsWith(".xlsx");
     const isCSV = file.name.endsWith(".csv");
 
-    
+
 
     if (isExcel) {
       const reader = new FileReader();
@@ -97,7 +100,7 @@ const [filterSKU, setFilterSKU] = useState("");
           allOrders.push(...data);
           filesProcessed++;
           setLoadingMessage(`Loading order files... ${filesProcessed}/${files.length}`);
-          
+
           if (filesProcessed === files.length) {
             setOrderData(allOrders);
             const skus = [...new Set(allOrders.map((r) => r["SKU"]))].filter(Boolean);
@@ -114,7 +117,7 @@ const [filterSKU, setFilterSKU] = useState("");
   const handlePaymentFilesUpload = (e) => {
     const files = Array.from(e.target.files);
     setIsLoading(true);
-  setLoadingMessage(`Processing ${files.length} payment file(s)...`);
+    setLoadingMessage(`Processing ${files.length} payment file(s)...`);
     const allPayments = [];
     let adsTotal = 0;
     let filesProcessed = 0;
@@ -124,14 +127,14 @@ const [filterSKU, setFilterSKU] = useState("");
       parseExcelOrCSV(file, (data) => {
         allPayments.push(...data);
         filesProcessed++;
-        
+
         // Parse ads cost data from sheet index 2
         if (file.name.endsWith(".xlsx")) {
           const reader = new FileReader();
           reader.onload = (evt) => {
             const data = new Uint8Array(evt.target.result);
             const workbook = XLSX.read(data, { type: "array" });
-            
+
             // Check if there's a second sheet for ads
             if (workbook.SheetNames.length > 2) {
               const adsSheetName = workbook.SheetNames[2];
@@ -139,20 +142,20 @@ const [filterSKU, setFilterSKU] = useState("");
               const adsData = XLSX.utils.sheet_to_json(adsSheet, { header: 1, defval: "" });
 
               console.log(adsData);
-              
+
               // Sum up ads cost (assuming it's in a specific column)
               adsData.slice(1).forEach((row) => {
                 const cost = parseFloat(row[7]) || 0; // Adjust index based on your sheet structure
                 adsTotal += cost;
               });
             }
-            
+
             if (filesProcessed === files.length) {
               setProcessedPayments(allPayments);
               setPaymentFiles(files);
               setTotalAdsCost(adsTotal);
               setIsLoading(false);
-            setLoadingMessage("");
+              setLoadingMessage("");
             }
           };
           reader.readAsArrayBuffer(file);
@@ -187,14 +190,14 @@ const [filterSKU, setFilterSKU] = useState("");
       "Sub Order No": order.orderId,
       "SKU": order.sku,
       "Product Name": order["Product Name"] || "",
-    
+
       "Total Settlement": order.totalSettlement.toFixed(2),
       "Purchase Cost": order.purchase.toFixed(2),
       "Profit/Loss": order.profit.toFixed(2),
       "order Date": order.paymentDetails.map((p) => p.orderDate).join(" | "),
       "Payment Date": order.paymentDetails.map((p) => p.paymentDate).join(" | "),
       "Order Status": order.paymentDetails.map((p) => p.status).join(" | "),
-     
+
       // "Payment Details": order.paymentDetails.map((p) => 
       //   `${p.date} - ${p.status} - ₹${p.amount.toFixed(2)}`
       // ).join(" | ")
@@ -216,10 +219,10 @@ const [filterSKU, setFilterSKU] = useState("");
     ];
 
     ws['!cols'] = columnWidths;
-    
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Order Details");
-    
+
     const fileName = `HISAB-Meesho_Order_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(wb, fileName);
   };
@@ -232,64 +235,74 @@ const [filterSKU, setFilterSKU] = useState("");
 
     console.log(orderData);
 
-     setIsLoading(true);
-     setLoadingMessage(`Processing ${orderData.length} orders...`);
+    setIsLoading(true);
+    setLoadingMessage(`Processing ${orderData.length} orders...`);
 
-  setTimeout(() =>{  const merged = orderData.map((order, index) => {
-      setLoadingMessage(`Processing orders... ${index}/${orderData.length}`);
-      const orderId = order["Sub Order No"] || order["sub order no"];
+    setTimeout(() => {
+      const merged = orderData.map((order, index) => {
+        setLoadingMessage(`Processing orders... ${index}/${orderData.length}`);
+        const orderId = order["Sub Order No"] || order["sub order no"];
 
-      const matchingPayments = processedPayments.filter((payment) => {
-        const paymentOrderId = payment["Sub Order No"] || payment["sub order no"];
-        return paymentOrderId === orderId;
+        const matchingPayments = processedPayments.filter((payment) => {
+          const paymentOrderId = payment["Sub Order No"] || payment["sub order no"];
+          return paymentOrderId === orderId;
+        });
+
+        const totalSettlement = matchingPayments.reduce((sum, p) => {
+          return sum + (parseFloat(p["Final Settlement Amount"]) || 0);
+        }, 0);
+
+        const hasValidPayment = matchingPayments.some((p) => {
+          const status = (p["Live Order Status"] || p["Payment Status"] || "").toLowerCase().trim();
+          return status && status !== "return" && status !== "returned" && status !== "rto";
+        });
+
+        const paymentDetails = matchingPayments.map((p) => ({
+          orderDate: p["Order Date"] || "",
+          paymentDate: p["Payment Date"] || "",
+          status: p["Live Order Status"] || p["Payment Status"] || "",
+          amount: parseFloat(p["Final Settlement Amount"]) || 0,
+          type: p["Transaction Type"] || "Payment",
+          transactionId: p["Transaction ID"] || p["transaction id"] || ""
+        }));
+
+        const isPaymentPending = matchingPayments.some((p) => {
+          const status = (p["Live Order Status"] || p["Payment Status"] || "").toLowerCase().trim();
+          const txnId = (p["Transaction ID"] || p["transaction id"] || "").toString().trim();
+          return (status === "shipped" || status === "delivered") && !txnId;
+        });
+
+        const sku = order["SKU"];
+        const purchase = hasValidPayment ? (Number(customCosts[sku]) || 0) : 0;
+        const orderStatus = order["Reason for Credit Entry"];
+
+        const category = getCategory(order["Product Name"]);
+        const profit = totalSettlement - purchase;
+
+        return {
+          ...order,
+          orderId,
+          sku,
+          category,
+          totalSettlement,
+          orderStatus,
+          purchase,
+          profit,
+          paymentDetails,
+          paymentCount: matchingPayments.length,
+          hasValidPayment,
+          isPaymentPending
+        };
       });
 
-      const totalSettlement = matchingPayments.reduce((sum, p) => {
-        return sum + (parseFloat(p["Final Settlement Amount"]) || 0);
-      }, 0);
+      setMergedData(merged);
+      calculateSummaries(merged);
+      console.log("sku list ===== " + skuList);
+      setIsLoading(false);
+      setLoadingMessage("");
+      setStep("report");
+    }, 500)
 
-      const hasValidPayment = matchingPayments.some((p) => {
-        const status = (p["Live Order Status"] || p["Payment Status"] || "").toLowerCase().trim();
-        return status && status !== "return" && status !== "returned" && status !== "rto";
-      });
-
-      const paymentDetails = matchingPayments.map((p) => ({
-        orderDate: p["Order Date"] || "",
-        paymentDate: p["Payment Date"] || "",
-        status: p["Live Order Status"] || p["Payment Status"] || "",
-        amount: parseFloat(p["Final Settlement Amount"]) || 0,
-        type: p["Transaction Type"] || "Payment"
-      }));
-
-      const sku = order["SKU"];
-      const purchase = hasValidPayment ? (Number(customCosts[sku]) || 0) : 0;
-      const orderStatus = order["Reason for Credit Entry"];
-
-      const category = getCategory(order["Product Name"]);
-      const profit = totalSettlement - purchase;
-
-      return {
-        ...order,
-        orderId,
-        sku,
-        category,
-        totalSettlement,
-        orderStatus,
-        purchase,
-        profit,
-        paymentDetails,
-        paymentCount: matchingPayments.length,
-        hasValidPayment
-      };
-    });
-
-    setMergedData(merged);
-    calculateSummaries(merged);
-    console.log("sku list ===== " + skuList);
-     setIsLoading(false);
-            setLoadingMessage("");
-    setStep("report");},500)
-    
   };
 
 
@@ -303,6 +316,9 @@ const [filterSKU, setFilterSKU] = useState("");
         const status = p.status.toLowerCase().trim();
         return status === "return" || status === "returned";
       });
+
+      const isCancelled = item.orderStatus && item.orderStatus.toLowerCase().trim() === "cancelled";
+      const isPaymentPending = item.isPaymentPending;
 
 
       if (!categorySummary[item.category]) {
@@ -327,7 +343,9 @@ const [filterSKU, setFilterSKU] = useState("");
           purchase: 0,
           profit: 0,
           payments: 0,
-          returned: 0
+          returned: 0,
+          cancelled: 0,
+          paymentPending: 0
         };
       }
       skuSum[item.SKU].orders += 1;
@@ -336,6 +354,8 @@ const [filterSKU, setFilterSKU] = useState("");
       skuSum[item.SKU].profit += item.profit;
       skuSum[item.SKU].payments += item.paymentCount;
       if (isCustomerReturned) skuSum[item.SKU].returned += 1;
+      if (isCancelled) skuSum[item.SKU].cancelled += 1;
+      if (isPaymentPending) skuSum[item.SKU].paymentPending += 1;
     });
 
     setSummary(categorySummary);
@@ -360,9 +380,11 @@ const [filterSKU, setFilterSKU] = useState("");
     })
   ).length;
   const cancelled = mergedData.filter((order) =>
-    // order.map((p) => {
-    {  const status = order.orderStatus.toLowerCase().trim();
-      return status === "cancelled" || status === "CANCELLED";}
+  // order.map((p) => {
+  {
+    const status = order.orderStatus.toLowerCase().trim();
+    return status === "cancelled" || status === "CANCELLED";
+  }
     // }
     // )
   ).length;
@@ -386,7 +408,7 @@ const [filterSKU, setFilterSKU] = useState("");
 
     // Apply SKU filter
     if (filterSKU) {
-      filtered = filtered.filter((order) => 
+      filtered = filtered.filter((order) =>
         order.sku?.toLowerCase().includes(filterSKU.toLowerCase())
       );
     }
@@ -401,6 +423,8 @@ const [filterSKU, setFilterSKU] = useState("");
           });
         } else if (filterStatus === "valid") {
           return order.hasValidPayment;
+        } else if (filterStatus === "pending") {
+          return order.isPaymentPending;
         }
         return true;
       });
@@ -439,6 +463,39 @@ const [filterSKU, setFilterSKU] = useState("");
     }
   };
 
+  const handleSkuSort = (field) => {
+    if (skuSortField === field) {
+      setSkuSortDirection(skuSortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSkuSortField(field);
+      setSkuSortDirection("asc");
+    }
+  };
+
+  const getSortedSkuEntries = () => {
+    let entries = Object.entries(skuSummary);
+
+    if (skuSearchFilter) {
+      entries = entries.filter(([sku]) =>
+        sku.toLowerCase().includes(skuSearchFilter.toLowerCase())
+      );
+    }
+
+    if (!skuSortField) return entries;
+
+    return entries.sort((a, b) => {
+      let aVal, bVal;
+      if (skuSortField === "returnRate") {
+        aVal = a[1].orders > 0 ? (a[1].returned / a[1].orders) * 100 : 0;
+        bVal = b[1].orders > 0 ? (b[1].returned / b[1].orders) * 100 : 0;
+      } else {
+        aVal = a[1][skuSortField] || 0;
+        bVal = b[1][skuSortField] || 0;
+      }
+      return skuSortDirection === "asc" ? aVal - bVal : bVal - aVal;
+    });
+  };
+
   const resetFilters = () => {
     setFilterSKU("");
     setFilterStatus("");
@@ -453,37 +510,37 @@ const [filterSKU, setFilterSKU] = useState("");
       </h1> */}
 
       {isLoading && (
-  <div style={{
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: "rgba(0, 0, 0, 0.7)",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 9999,
-    color: "white"
-  }}>
-    <div style={{
-      width: "60px",
-      height: "60px",
-      border: "6px solid #f3f3f3",
-      borderTop: "6px solid #4CAF50",
-      borderRadius: "50%",
-      animation: "spin 1s linear infinite"
-    }}></div>
-    <p style={{ marginTop: "20px", fontSize: "18px", fontWeight: "600" }}>{loadingMessage}</p>
-    <style>{`
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0, 0, 0, 0.7)",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 9999,
+          color: "white"
+        }}>
+          <div style={{
+            width: "60px",
+            height: "60px",
+            border: "6px solid #f3f3f3",
+            borderTop: "6px solid #4CAF50",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite"
+          }}></div>
+          <p style={{ marginTop: "20px", fontSize: "18px", fontWeight: "600" }}>{loadingMessage}</p>
+          <style>{`
       @keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
       }
     `}</style>
-  </div>
-)}
+        </div>
+      )}
 
       {step === "upload" && (
         <div style={{ background: "#f9f9f9", padding: "10px", borderRadius: "12px" }}>
@@ -527,7 +584,7 @@ const [filterSKU, setFilterSKU] = useState("");
                 cursor: "pointer",
                 fontSize: "16px",
                 fontWeight: "600",
-                 fontFamily: "Urbanist"
+                fontFamily: "Urbanist"
               }}
             >
               Continue to Cost Setup →
@@ -551,7 +608,7 @@ const [filterSKU, setFilterSKU] = useState("");
               placeholder="e.g. 150"
               value={defaultCost}
               onChange={(e) => handleDefaultCostChange(e.target.value)}
-              style={{ padding: "10px", fontSize: "14px", width: "200px", borderRadius: "6px", border: "1px solid #ddd" ,  fontFamily: "Urbanist"}}
+              style={{ padding: "10px", fontSize: "14px", width: "200px", borderRadius: "6px", border: "1px solid #ddd", fontFamily: "Urbanist" }}
             />
           </div>
 
@@ -670,22 +727,66 @@ const [filterSKU, setFilterSKU] = useState("");
           </div>
 
           <h2>📦 SKU-wise Summary</h2>
+          <div style={{ marginBottom: "15px" }}>
+            <input
+              type="text"
+              placeholder="🔍 Search by SKU..."
+              value={skuSearchFilter}
+              onChange={(e) => setSkuSearchFilter(e.target.value)}
+              style={{
+                padding: "10px 14px",
+                fontSize: "14px",
+                border: "1px solid #ddd",
+                borderRadius: "6px",
+                outline: "none",
+                width: "300px",
+                fontFamily: "'Urbanist', sans-serif"
+              }}
+            />
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", background: "white", marginBottom: "30px" }}>
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
                   <th style={{ padding: "12px", textAlign: "left", borderBottom: "2px solid #ddd" }}>SKU</th>
-                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Orders</th>
+                  <th
+                    onClick={() => handleSkuSort("orders")}
+                    style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
+                  >
+                    Orders {skuSortField === "orders" ? (skuSortDirection === "asc" ? "▲" : "▼") : "⇅"}
+                  </th>
                   <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Payments</th>
-                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Returned</th>
-                  <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Return %</th>
+                  <th
+                    onClick={() => handleSkuSort("returned")}
+                    style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
+                  >
+                    Returned {skuSortField === "returned" ? (skuSortDirection === "asc" ? "▲" : "▼") : "⇅"}
+                  </th>
+                  <th
+                    onClick={() => handleSkuSort("returnRate")}
+                    style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
+                  >
+                    Return % {skuSortField === "returnRate" ? (skuSortDirection === "asc" ? "▲" : "▼") : "⇅"}
+                  </th>
+                  <th
+                    onClick={() => handleSkuSort("cancelled")}
+                    style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
+                  >
+                    Cancelled {skuSortField === "cancelled" ? (skuSortDirection === "asc" ? "▲" : "▼") : "⇅"}
+                  </th>
+                  <th
+                    onClick={() => handleSkuSort("paymentPending")}
+                    style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
+                  >
+                    Pending {skuSortField === "paymentPending" ? (skuSortDirection === "asc" ? "\u25B2" : "\u25BC") : "\u21C5"}
+                  </th>
                   <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Revenue</th>
                   <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Purchase</th>
                   <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Profit</th>
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(skuSummary).map(([sku, val]) => {
+                {getSortedSkuEntries().map(([sku, val]) => {
                   const returnRate = val.orders > 0 ? ((val.returned / val.orders) * 100).toFixed(1) : 0;
                   return (
 
@@ -697,60 +798,114 @@ const [filterSKU, setFilterSKU] = useState("");
                       <td style={{ padding: "12px", textAlign: "right", color: returnRate > 10 ? "#d32f2f" : "#388e3c", fontWeight: "600" }}>
                         {returnRate}%
                       </td>
+                      <td style={{ padding: "12px", textAlign: "right", color: val.cancelled > 0 ? "#e65100" : "inherit" }}>{val.cancelled}</td>
+                      <td style={{ padding: "12px", textAlign: "right", color: val.paymentPending > 0 ? "#ef6c00" : "inherit", fontWeight: val.paymentPending > 0 ? "600" : "normal" }}>{val.paymentPending}</td>
                       <td style={{ padding: "12px", textAlign: "right" }}>₹{val.revenue.toFixed(2)}</td>
                       <td style={{ padding: "12px", textAlign: "right" }}>₹{val.purchase.toFixed(2)}</td>
                       <td style={{ padding: "12px", textAlign: "right", color: val.profit >= 0 ? "green" : "red", fontWeight: "600" }}>
                         ₹{val.profit.toFixed(2)}
                       </td>
-                      
+
                     </tr>
                   )
                 })}
+                {(() => {
+                  const entries = getSortedSkuEntries();
+                  const rowCount = entries.length;
+                  if (rowCount === 0) return null;
+                  const totalOrders = entries.reduce((sum, [, v]) => sum + v.orders, 0);
+                  const totalPayments = entries.reduce((sum, [, v]) => sum + v.payments, 0);
+                  const totalReturned = entries.reduce((sum, [, v]) => sum + v.returned, 0);
+                  const totalCancelled = entries.reduce((sum, [, v]) => sum + v.cancelled, 0);
+                  const totalPending = entries.reduce((sum, [, v]) => sum + v.paymentPending, 0);
+                  const totalRevenue = entries.reduce((sum, [, v]) => sum + v.revenue, 0);
+                  const totalPurchase = entries.reduce((sum, [, v]) => sum + v.purchase, 0);
+                  const totalProfit = entries.reduce((sum, [, v]) => sum + v.profit, 0);
+                  const totalReturnRate = totalOrders > 0 ? ((totalReturned / totalOrders) * 100).toFixed(1) : "0.0";
+                  const avgReturnRate = totalOrders > 0 ? ((totalReturned / totalOrders) * 100).toFixed(1) : "0.0";
+                  const avgProfit = totalOrders > 0 ? (totalProfit / totalOrders).toFixed(2) : "0.00";
+                  return (
+                    <>
+                      <tr style={{ background: "#f5f5f5", borderTop: "3px solid #333" }}>
+                        <td style={{ padding: "12px", fontWeight: "bold", fontSize: "14px" }}>TOTAL</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{totalOrders}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{totalPayments}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{totalReturned}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: parseFloat(totalReturnRate) > 10 ? "#d32f2f" : "#388e3c" }}>
+                          {totalReturnRate}%
+                        </td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalCancelled > 0 ? "#e65100" : "inherit" }}>{totalCancelled}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalPending > 0 ? "#ef6c00" : "inherit" }}>{totalPending}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{formatIndianCurrency(totalRevenue)}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{formatIndianCurrency(totalPurchase)}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalProfit >= 0 ? "green" : "red" }}>
+                          {formatIndianCurrency(totalProfit)}
+                        </td>
+                      </tr>
+                      <tr style={{ background: "#e8eaf6" }}>
+                        <td style={{ padding: "12px", fontWeight: "bold", fontSize: "14px" }}>AVERAGE</td>
+                        <td style={{ padding: "12px", textAlign: "right" }}></td>
+                        <td style={{ padding: "12px", textAlign: "right" }}></td>
+                        <td style={{ padding: "12px", textAlign: "right" }}></td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", fontSize: "14px", color: parseFloat(avgReturnRate) > 10 ? "#d32f2f" : "#388e3c" }}>
+                          {avgReturnRate}%
+                        </td>
+                        <td style={{ padding: "12px", textAlign: "right" }}></td>
+                        <td style={{ padding: "12px", textAlign: "right" }}></td>
+                        <td style={{ padding: "12px", textAlign: "right" }}></td>
+                        <td style={{ padding: "12px", textAlign: "right" }}></td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", fontSize: "14px", color: parseFloat(avgProfit) >= 0 ? "green" : "red" }}>
+                          ₹{avgProfit}
+                        </td>
+                      </tr>
+                    </>
+                  );
+                })()}
               </tbody>
             </table>
           </div>
 
           <h2>📋 Order-wise Payment Details</h2>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
- <div style={{ fontSize: "14px", color: "#666" }}>
+            <div style={{ fontSize: "14px", color: "#666" }}>
               Showing {filteredOrders.length} of {mergedData.length} orders
             </div>
-  <button
-    onClick={exportToExcel}
-    style={{
-      background: "#4CAF50",
-      color: "white",
-      padding: "10px 20px",
-      border: "none",
-      borderRadius: "8px",
-      cursor: "pointer",
-      fontSize: "14px",
-      fontWeight: "600",
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-      transition: "all 0.3s ease"
-    }}
-    onMouseOver={(e) => e.target.style.background = "#45a049"}
-    onMouseOut={(e) => e.target.style.background = "#4CAF50"}
-  >
-    📥 Export to Excel
-  </button>
-</div>
+            <button
+              onClick={exportToExcel}
+              style={{
+                background: "#4CAF50",
+                color: "white",
+                padding: "10px 20px",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: "600",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                transition: "all 0.3s ease"
+              }}
+              onMouseOver={(e) => e.target.style.background = "#45a049"}
+              onMouseOut={(e) => e.target.style.background = "#4CAF50"}
+            >
+              📥 Export to Excel
+            </button>
+          </div>
 
-{/* Filters */}
-          <div style={{ 
-            background: "#f9f9f9", 
-           
-            borderRadius: "12px", 
+          {/* Filters */}
+          <div style={{
+            background: "#f9f9f9",
+
+            borderRadius: "12px",
             marginBottom: "10px",
             display: "flex",
             gap: "15px",
             flexWrap: "wrap",
             alignItems: "end"
           }}>
-            <div style={{ flex: "1",  minWidth: "100px" }}>
+            <div style={{ flex: "1", minWidth: "100px" }}>
               <label style={{ display: "block", fontSize: "13px", color: "#666", marginBottom: "5px", fontWeight: "600" }}>
                 🔍 Filter by SKU
               </label>
@@ -772,7 +927,7 @@ const [filterSKU, setFilterSKU] = useState("");
 
             <div> </div>
 
-             <div style={{ flex: "1",  gap: "10px",minWidth: "100px" }}>
+            <div style={{ flex: "1", gap: "10px", minWidth: "100px" }}>
               <label style={{ display: "block", fontSize: "13px", color: "#666", marginBottom: "5px", fontWeight: "600" }}>
                 📊 Filter by Status
               </label>
@@ -792,10 +947,11 @@ const [filterSKU, setFilterSKU] = useState("");
                 <option value="">All Orders</option>
                 <option value="valid">Valid Payments Only</option>
                 <option value="returned">Returned Orders Only</option>
+                <option value="pending">Payment Pending</option>
               </select>
             </div>
 
-             <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
+            <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
               <button
                 onClick={resetFilters}
                 style={{
@@ -833,16 +989,16 @@ const [filterSKU, setFilterSKU] = useState("");
               </thead>
               <tbody>
                 {filteredOrders.slice(0, filteredOrders.length).map((order, idx) => {
-                   const isReturnedOrder = order.paymentDetails.some((p) => {
+                  const isReturnedOrder = order.paymentDetails.some((p) => {
                     const status = p.status.toLowerCase().trim();
                     return status === "return" || status === "returned";
                   });
-                  return(
-                  <tr key={idx} style={{ borderBottom: "1px solid #eee" , background: isReturnedOrder ? "rgba(255, 0, 0, 0.05)" : "transparent"}}>
-                    <td style={{ padding: "5px" ,textAlign: "center",}}>{idx+1}</td>
-                    <td style={{ padding: "10px" }}>{order.orderId}</td>
-                    <td style={{ padding: "10px" }}>{order.SKU}</td>
-                    {/* <td style={{ padding: "10px" }}>
+                  return (
+                    <tr key={idx} style={{ borderBottom: "1px solid #eee", background: isReturnedOrder ? "rgba(255, 0, 0, 0.05)" : "transparent" }}>
+                      <td style={{ padding: "5px", textAlign: "center", }}>{idx + 1}</td>
+                      <td style={{ padding: "10px" }}>{order.orderId}</td>
+                      <td style={{ padding: "10px" }}>{order.SKU}</td>
+                      {/* <td style={{ padding: "10px" }}>
                       {order.paymentDetails.length > 0 ? (
                         <div>
                           {order.paymentDetails.map((p, i) => (
@@ -855,68 +1011,69 @@ const [filterSKU, setFilterSKU] = useState("");
                         <span style={{ color: "#999" }}>No payments found</span>
                       )}
                     </td> */}
-                  <td style={{ padding: "10px" }}>
-                      {order.paymentDetails.length > 0 ? (
-                        <div>
-                          {order.paymentDetails.map((p, i) => (
-                            <div key={i} style={{ marginBottom: "4px", fontSize: "12px" }}>
-                              {p.orderDate}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span style={{ color: "#999" }}>N/A</span>
-                      )}
-                    </td>
-                        <td style={{ padding: "10px" }}>
-                      {order.paymentDetails.length > 0 ? (
-                        <div>
-                          {order.paymentDetails.map((p, i) => (
-                            <div key={i} style={{ marginBottom: "4px", fontSize: "12px" }}>
-                              {p.paymentDate}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span style={{ color: "#999" }}>N/A</span>
-                      )}
-                    </td><td style={{ padding: "10px" }}>
-                      {order.paymentDetails.length > 0 ? (
-                        <div>
-                          {order.paymentDetails.map((p, i) => (
-                            <div key={i} style={{ marginBottom: "4px", fontSize: "12px" ,color: p.status == "Return" ? "red" : "black", }}>
-                              {p.status}
-                            </div>
-                          ))}
-                        </div>
-                      ) : order.paymentDetails.length == 0 ? (<span style={{ color: "orange" }}>{order.orderStatus}</span>):  (
-                        <span style={{ color: "#999" }}>N/A</span>
-                      )}
-                    </td>
-                    <td style={{ padding: "10px" }}>
-                      {order.hasValidPayment ? (
-                        `₹${order.purchase.toFixed(2)}`
-                      ) : (
-                        <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>
-                      )}
-                    </td>
-                     
-                    <td style={{ padding: "10px", textAlign: "right" }}>₹{order.totalSettlement.toFixed(2)}</td>
-                    <td style={{ padding: "10px", textAlign: "right", color: order.profit >= 0 ? "green" : "red", fontWeight: "600" }}>
-                      ₹{order.profit.toFixed(2)}
-                    </td>
-                  </tr>
-                )})}
-                 <tr style={{ background: "#f5f5f5", borderTop: "3px solid #333" }}>
+                      <td style={{ padding: "10px" }}>
+                        {order.paymentDetails.length > 0 ? (
+                          <div>
+                            {order.paymentDetails.map((p, i) => (
+                              <div key={i} style={{ marginBottom: "4px", fontSize: "12px" }}>
+                                {p.orderDate}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#999" }}>N/A</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px" }}>
+                        {order.paymentDetails.length > 0 ? (
+                          <div>
+                            {order.paymentDetails.map((p, i) => (
+                              <div key={i} style={{ marginBottom: "4px", fontSize: "12px" }}>
+                                {p.paymentDate}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#999" }}>N/A</span>
+                        )}
+                      </td><td style={{ padding: "10px" }}>
+                        {order.paymentDetails.length > 0 ? (
+                          <div>
+                            {order.paymentDetails.map((p, i) => (
+                              <div key={i} style={{ marginBottom: "4px", fontSize: "12px", color: p.status == "Return" ? "red" : "black", }}>
+                                {p.status}
+                              </div>
+                            ))}
+                          </div>
+                        ) : order.paymentDetails.length == 0 ? (<span style={{ color: "orange" }}>{order.orderStatus}</span>) : (
+                          <span style={{ color: "#999" }}>N/A</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px" }}>
+                        {order.hasValidPayment ? (
+                          `₹${order.purchase.toFixed(2)}`
+                        ) : (
+                          <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>
+                        )}
+                      </td>
+
+                      <td style={{ padding: "10px", textAlign: "right" }}>₹{order.totalSettlement.toFixed(2)}</td>
+                      <td style={{ padding: "10px", textAlign: "right", color: order.profit >= 0 ? "green" : "red", fontWeight: "600" }}>
+                        ₹{order.profit.toFixed(2)}
+                      </td>
+                    </tr>
+                  )
+                })}
+                <tr style={{ background: "#f5f5f5", borderTop: "3px solid #333" }}>
                   <td colSpan="6" style={{ padding: "12px", fontWeight: "bold", fontSize: "14px" }}>TOTAL</td>
                   <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>
-                    {formatIndianCurrency(mergedData.reduce((sum, order) => sum + order.purchase, 0))}
+                    {formatIndianCurrency(filteredOrders.reduce((sum, order) => sum + order.purchase, 0))}
                   </td>
                   <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>
-                    {formatIndianCurrency(mergedData.reduce((sum, order) => sum + order.totalSettlement, 0))}
+                    {formatIndianCurrency(filteredOrders.reduce((sum, order) => sum + order.totalSettlement, 0))}
                   </td>
-                  <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalProfit >= 0 ? "green" : "red" }}>
-                    {formatIndianCurrency(totalProfit)}
+                  <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: filteredOrders.reduce((sum, order) => sum + order.profit, 0) >= 0 ? "green" : "red" }}>
+                    {formatIndianCurrency(filteredOrders.reduce((sum, order) => sum + order.profit, 0))}
                   </td>
                 </tr>
               </tbody>
@@ -928,17 +1085,17 @@ const [filterSKU, setFilterSKU] = useState("");
             </p>
           )} */}
 
-           <div style={{ 
-            marginTop: "60px", 
-            padding: "30px 0", 
+          <div style={{
+            marginTop: "60px",
+            padding: "30px 0",
             borderTop: "1px solid #e0e0e0",
             background: "#fafafa"
           }}>
-            <div style={{ 
-              maxWidth: "1200px", 
-              margin: "0 auto", 
-              display: "flex", 
-              justifyContent: "space-between", 
+            <div style={{
+              maxWidth: "1200px",
+              margin: "0 auto",
+              display: "flex",
+              justifyContent: "space-between",
               alignItems: "center",
               flexWrap: "wrap",
               gap: "20px"
@@ -951,10 +1108,10 @@ const [filterSKU, setFilterSKU] = useState("");
                   Professional business intelligence and profit tracking solution for e-commerce sellers.
                 </div>
               </div>
-              
-              <div style={{ 
-                textAlign: "right", 
-                flex: "1", 
+
+              <div style={{
+                textAlign: "right",
+                flex: "1",
                 minWidth: "250px",
                 fontSize: "13px",
                 color: "#666"
@@ -971,25 +1128,25 @@ const [filterSKU, setFilterSKU] = useState("");
               </div>
             </div>
           </div>
-      <div style={{ 
-              textAlign: "center", 
-              marginTop: "25px", 
-              paddingTop: "20px", 
-              borderTop: "1px solid #e0e0e0",
-              fontSize: "12px",
-              color: "#999"
-            }}>
-              © {new Date().getFullYear()} All Rights Reserved. Built By Dash Infotech.
-            </div>
+          <div style={{
+            textAlign: "center",
+            marginTop: "25px",
+            paddingTop: "20px",
+            borderTop: "1px solid #e0e0e0",
+            fontSize: "12px",
+            color: "#999"
+          }}>
+            © {new Date().getFullYear()} All Rights Reserved. Built By Dash Infotech.
+          </div>
 
         </div>
       )}
 
-     
+
 
 
 
     </div>
-    
+
   );
 }
