@@ -48,6 +48,9 @@ export default function MeeshoProfitDashboard() {
   const [skuSortField, setSkuSortField] = useState("");
   const [skuSortDirection, setSkuSortDirection] = useState("asc");
   const [skuSearchFilter, setSkuSearchFilter] = useState("");
+  const [showCancelled, setShowCancelled] = useState(false);
+  const [showRTO, setShowRTO] = useState(false);
+  const [showAdsComparison, setShowAdsComparison] = useState(false);
 
   const parseExcelOrCSV = (file, callback, sheetIndex = 1) => {
     const isExcel = file.name.endsWith(".xlsx");
@@ -266,10 +269,9 @@ export default function MeeshoProfitDashboard() {
           transactionId: p["Transaction ID"] || p["transaction id"] || ""
         }));
 
-        const isPaymentPending = matchingPayments.some((p) => {
-          const status = (p["Live Order Status"] || p["Payment Status"] || "").toLowerCase().trim();
+        const isPaymentPending = matchingPayments.length === 0 || matchingPayments.some((p) => {
           const txnId = (p["Transaction ID"] || p["transaction id"] || "").toString().trim();
-          return (status === "shipped" || status === "delivered") && !txnId;
+          return !txnId;
         });
 
         const sku = order["SKU"];
@@ -289,7 +291,7 @@ export default function MeeshoProfitDashboard() {
           purchase,
           profit,
           paymentDetails,
-          paymentCount: matchingPayments.length,
+          paymentCount: matchingPayments.filter(p => (parseFloat(p["Final Settlement Amount"]) || 0) > 0).length,
           hasValidPayment,
           isPaymentPending
         };
@@ -317,8 +319,14 @@ export default function MeeshoProfitDashboard() {
         return status === "return" || status === "returned";
       });
 
+      const isRTO = item.paymentDetails.some((p) => {
+        const status = p.status.toLowerCase().trim();
+        return status === "rto";
+      });
+
       const isCancelled = item.orderStatus && item.orderStatus.toLowerCase().trim() === "cancelled";
       const isPaymentPending = item.isPaymentPending;
+      const isAdOrder = (item["Order source"] || item["Order Source"] || "").toLowerCase().trim() === "ad order";
 
 
       if (!categorySummary[item.category]) {
@@ -344,8 +352,15 @@ export default function MeeshoProfitDashboard() {
           profit: 0,
           payments: 0,
           returned: 0,
+          rto: 0,
           cancelled: 0,
-          paymentPending: 0
+          paymentPending: 0,
+          adOrders: 0,
+          adReturned: 0,
+          adRto: 0,
+          adCancelled: 0,
+          adPayments: 0,
+          adProfit: 0
         };
       }
       skuSum[item.SKU].orders += 1;
@@ -354,8 +369,17 @@ export default function MeeshoProfitDashboard() {
       skuSum[item.SKU].profit += item.profit;
       skuSum[item.SKU].payments += item.paymentCount;
       if (isCustomerReturned) skuSum[item.SKU].returned += 1;
+      if (isRTO) skuSum[item.SKU].rto += 1;
       if (isCancelled) skuSum[item.SKU].cancelled += 1;
       if (isPaymentPending) skuSum[item.SKU].paymentPending += 1;
+      if (isAdOrder) {
+        skuSum[item.SKU].adOrders += 1;
+        skuSum[item.SKU].adPayments += item.paymentCount;
+        skuSum[item.SKU].adProfit += item.profit;
+        if (isCustomerReturned) skuSum[item.SKU].adReturned += 1;
+        if (isRTO) skuSum[item.SKU].adRto += 1;
+        if (isCancelled) skuSum[item.SKU].adCancelled += 1;
+      }
     });
 
     setSummary(categorySummary);
@@ -398,8 +422,9 @@ export default function MeeshoProfitDashboard() {
       .reduce((pSum, p) => pSum + p.amount, 0);
     return sum + returnCharge;
   }, 0);
-  const overallReturnRate = mergedData.length > 0 ? ((totalReturned / mergedData.length) * 100).toFixed(1) : 0;
-  const rtoReturnRate = mergedData.length > 0 ? ((rtoReturned / mergedData.length) * 100).toFixed(1) : 0;
+  const nonCancelledOrders = mergedData.length - cancelled;
+  const overallReturnRate = nonCancelledOrders > 0 ? ((totalReturned / nonCancelledOrders) * 100).toFixed(1) : 0;
+  const rtoReturnRate = nonCancelledOrders > 0 ? ((rtoReturned / nonCancelledOrders) * 100).toFixed(1) : 0;
   const cancelledRate = mergedData.length > 0 ? ((cancelled / mergedData.length) * 100).toFixed(1) : 0;
 
   // Filter and sort orders
@@ -424,7 +449,16 @@ export default function MeeshoProfitDashboard() {
         } else if (filterStatus === "valid") {
           return order.hasValidPayment;
         } else if (filterStatus === "pending") {
-          return order.isPaymentPending;
+          const isCancelled = order.orderStatus && order.orderStatus.toLowerCase().trim() === "cancelled";
+          const isReturned = order.paymentDetails.some((p) => {
+            const status = p.status.toLowerCase().trim();
+            return status === "return" || status === "returned";
+          });
+          const isRTO = order.paymentDetails.some((p) => {
+            const status = p.status.toLowerCase().trim();
+            return status === "rto";
+          });
+          return order.isPaymentPending && !isCancelled && !isReturned && !isRTO;
         }
         return true;
       });
@@ -599,6 +633,24 @@ export default function MeeshoProfitDashboard() {
         <div style={{ background: "#f9f9f9", padding: "30px", borderRadius: "12px" }}>
           <h2>🧾 Enter Purchase Cost per SKU</h2>
 
+          <button
+            onClick={mergeOrdersWithPayments}
+            style={{
+              background: "#2196F3",
+              color: "white",
+              padding: "12px 24px",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontSize: "16px",
+              fontWeight: "600",
+              marginBottom: "25px",
+              fontFamily: "Urbanist"
+            }}
+          >
+            {isLoading ? "⏳ Processing..." : "✅ Generate Report"}
+          </button>
+
           <div style={{ marginBottom: "25px", padding: "15px", background: "white", borderRadius: "8px" }}>
             <label style={{ display: "block", marginBottom: "10px", fontWeight: "600" }}>
               💼 Set Default Purchase Cost for All SKUs:
@@ -655,7 +707,8 @@ export default function MeeshoProfitDashboard() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "15px", marginBottom: "30px" }}>
             <div style={{ background: "#e3f2fd", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📦 Total Orders</div>
-              <div style={{ fontSize: "32px", fontWeight: "700", color: "#1976d2" }}>{mergedData.length}</div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: "#1976d2" }}>{nonCancelledOrders}</div>
+              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>Total incl. cancelled: {mergedData.length}</div>
             </div>
             <div style={{ background: "#e8f5e9", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💰 Total Revenue</div>
@@ -682,12 +735,12 @@ export default function MeeshoProfitDashboard() {
             <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 RTO Returns</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: overallReturnRate > 10 ? "#d32f2f" : "#388e3c" }}>{rtoReturnRate}%</div>
-              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{rtoReturned} of {mergedData.length} orders</div>
+              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{rtoReturned} of {nonCancelledOrders} orders</div>
             </div>
             <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 Customer Returns</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: overallReturnRate > 10 ? "#d32f2f" : "#388e3c" }}>{overallReturnRate}%</div>
-              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{totalReturned} of {mergedData.length} orders</div>
+              <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{totalReturned} of {nonCancelledOrders} orders</div>
             </div>
             <div style={{ background: "#fce4ec", padding: "20px", borderRadius: "12px" }}>
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💔 Return Charges</div>
@@ -727,7 +780,7 @@ export default function MeeshoProfitDashboard() {
           </div>
 
           <h2>📦 SKU-wise Summary</h2>
-          <div style={{ marginBottom: "15px" }}>
+          <div style={{ marginBottom: "15px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
             <input
               type="text"
               placeholder="🔍 Search by SKU..."
@@ -743,6 +796,35 @@ export default function MeeshoProfitDashboard() {
                 fontFamily: "'Urbanist', sans-serif"
               }}
             />
+            <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", color: "#555", cursor: "pointer", userSelect: "none" }}>
+                <input
+                  type="checkbox"
+                  checked={showCancelled}
+                  onChange={(e) => setShowCancelled(e.target.checked)}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                Show Cancelled
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", color: "#555", cursor: "pointer", userSelect: "none" }}>
+                <input
+                  type="checkbox"
+                  checked={showRTO}
+                  onChange={(e) => setShowRTO(e.target.checked)}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                Show RTO
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", color: "#667eea", cursor: "pointer", userSelect: "none", fontWeight: "600" }}>
+                <input
+                  type="checkbox"
+                  checked={showAdsComparison}
+                  onChange={(e) => setShowAdsComparison(e.target.checked)}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                📢 Show Ads Comparison
+              </label>
+            </div>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", background: "white", marginBottom: "30px" }}>
@@ -768,12 +850,23 @@ export default function MeeshoProfitDashboard() {
                   >
                     Return % {skuSortField === "returnRate" ? (skuSortDirection === "asc" ? "▲" : "▼") : "⇅"}
                   </th>
-                  <th
+                  {showRTO && <th
+                    onClick={() => handleSkuSort("rto")}
+                    style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
+                  >
+                    RTO {skuSortField === "rto" ? (skuSortDirection === "asc" ? "▲" : "▼") : "⇅"}
+                  </th>}
+                  {showRTO && <th
+                    style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}
+                  >
+                    RTO %
+                  </th>}
+                  {showCancelled && <th
                     onClick={() => handleSkuSort("cancelled")}
                     style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
                   >
                     Cancelled {skuSortField === "cancelled" ? (skuSortDirection === "asc" ? "▲" : "▼") : "⇅"}
-                  </th>
+                  </th>}
                   <th
                     onClick={() => handleSkuSort("paymentPending")}
                     style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
@@ -783,11 +876,20 @@ export default function MeeshoProfitDashboard() {
                   <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Revenue</th>
                   <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Purchase</th>
                   <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd" }}>Profit</th>
+                  {showAdsComparison && <>
+                    <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #667eea", background: "#f0f0ff", color: "#667eea", fontSize: "12px" }}>📢 Ad Orders</th>
+                    <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #667eea", background: "#f0f0ff", color: "#667eea", fontSize: "12px" }}>Ad Ret%</th>
+                    <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #667eea", background: "#f0f0ff", color: "#667eea", fontSize: "12px" }}>Ad RTO%</th>
+                    <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #667eea", background: "#f0f0ff", color: "#667eea", fontSize: "12px" }}>Ad Canc%</th>
+                    <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #388e3c", background: "#f0fff0", color: "#388e3c", fontSize: "12px" }}>🌿 Org Ret%</th>
+                    <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #388e3c", background: "#f0fff0", color: "#388e3c", fontSize: "12px" }}>Org RTO%</th>
+                    <th style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #388e3c", background: "#f0fff0", color: "#388e3c", fontSize: "12px" }}>Org Canc%</th>
+                  </>}
                 </tr>
               </thead>
               <tbody>
                 {getSortedSkuEntries().map(([sku, val]) => {
-                  const returnRate = val.orders > 0 ? ((val.returned / val.orders) * 100).toFixed(1) : 0;
+                  const returnRate = (val.orders - val.cancelled) > 0 ? ((val.returned / (val.orders - val.cancelled)) * 100).toFixed(1) : 0;
                   return (
 
                     <tr key={sku} style={{ borderBottom: "1px solid #eee" }}>
@@ -798,14 +900,38 @@ export default function MeeshoProfitDashboard() {
                       <td style={{ padding: "12px", textAlign: "right", color: returnRate > 10 ? "#d32f2f" : "#388e3c", fontWeight: "600" }}>
                         {returnRate}%
                       </td>
-                      <td style={{ padding: "12px", textAlign: "right", color: val.cancelled > 0 ? "#e65100" : "inherit" }}>{val.cancelled}</td>
+                      {showRTO && <td style={{ padding: "12px", textAlign: "right", color: val.rto > 0 ? "#d32f2f" : "inherit" }}>{val.rto}</td>}
+                      {showRTO && (() => { const skuNonCancelled = val.orders - val.cancelled; const rtoRate = skuNonCancelled > 0 ? ((val.rto / skuNonCancelled) * 100).toFixed(1) : "0.0"; return <td style={{ padding: "12px", textAlign: "right", color: parseFloat(rtoRate) > 10 ? "#d32f2f" : "#388e3c", fontWeight: "600" }}>{rtoRate}%</td>; })()}
+                      {showCancelled && <td style={{ padding: "12px", textAlign: "right", color: val.cancelled > 0 ? "#e65100" : "inherit" }}>{val.cancelled}</td>}
                       <td style={{ padding: "12px", textAlign: "right", color: val.paymentPending > 0 ? "#ef6c00" : "inherit", fontWeight: val.paymentPending > 0 ? "600" : "normal" }}>{val.paymentPending}</td>
                       <td style={{ padding: "12px", textAlign: "right" }}>₹{val.revenue.toFixed(2)}</td>
                       <td style={{ padding: "12px", textAlign: "right" }}>₹{val.purchase.toFixed(2)}</td>
                       <td style={{ padding: "12px", textAlign: "right", color: val.profit >= 0 ? "green" : "red", fontWeight: "600" }}>
                         ₹{val.profit.toFixed(2)}
                       </td>
-
+                      {showAdsComparison && (() => {
+                        const orgOrders = val.orders - val.adOrders;
+                        const orgReturned = val.returned - val.adReturned;
+                        const orgRto = val.rto - val.adRto;
+                        const orgCancelled = val.cancelled - val.adCancelled;
+                        const adNonCanc = val.adOrders - val.adCancelled;
+                        const orgNonCanc = orgOrders - orgCancelled;
+                        const adRetRate = adNonCanc > 0 ? ((val.adReturned / adNonCanc) * 100).toFixed(1) : "0.0";
+                        const adRtoRate = adNonCanc > 0 ? ((val.adRto / adNonCanc) * 100).toFixed(1) : "0.0";
+                        const adCancRate = val.adOrders > 0 ? ((val.adCancelled / val.adOrders) * 100).toFixed(1) : "0.0";
+                        const orgRetRate = orgNonCanc > 0 ? ((orgReturned / orgNonCanc) * 100).toFixed(1) : "0.0";
+                        const orgRtoRate = orgNonCanc > 0 ? ((orgRto / orgNonCanc) * 100).toFixed(1) : "0.0";
+                        const orgCancRate = orgOrders > 0 ? ((orgCancelled / orgOrders) * 100).toFixed(1) : "0.0";
+                        return <>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#fafaff", color: "#667eea", fontWeight: "600" }}>{val.adOrders}</td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#fafaff", color: parseFloat(adRetRate) > parseFloat(orgRetRate) ? "#d32f2f" : "#388e3c", fontWeight: "600" }}>{adRetRate}%</td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#fafaff", color: parseFloat(adRtoRate) > parseFloat(orgRtoRate) ? "#d32f2f" : "#388e3c", fontWeight: "600" }}>{adRtoRate}%</td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#fafaff", color: parseFloat(adCancRate) > parseFloat(orgCancRate) ? "#d32f2f" : "#388e3c", fontWeight: "600" }}>{adCancRate}%</td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#f5fff5", color: "#388e3c", fontWeight: "600" }}>{orgRetRate}%</td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#f5fff5", color: "#388e3c", fontWeight: "600" }}>{orgRtoRate}%</td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#f5fff5", color: "#388e3c", fontWeight: "600" }}>{orgCancRate}%</td>
+                        </>;
+                      })()}
                     </tr>
                   )
                 })}
@@ -821,9 +947,12 @@ export default function MeeshoProfitDashboard() {
                   const totalRevenue = entries.reduce((sum, [, v]) => sum + v.revenue, 0);
                   const totalPurchase = entries.reduce((sum, [, v]) => sum + v.purchase, 0);
                   const totalProfit = entries.reduce((sum, [, v]) => sum + v.profit, 0);
-                  const totalReturnRate = totalOrders > 0 ? ((totalReturned / totalOrders) * 100).toFixed(1) : "0.0";
-                  const avgReturnRate = totalOrders > 0 ? ((totalReturned / totalOrders) * 100).toFixed(1) : "0.0";
-                  const avgProfit = totalOrders > 0 ? (totalProfit / totalOrders).toFixed(2) : "0.00";
+                  const nonCancelledTotal = totalOrders - totalCancelled;
+                  const totalReturnRate = nonCancelledTotal > 0 ? ((totalReturned / nonCancelledTotal) * 100).toFixed(1) : "0.0";
+                  const avgReturnRate = nonCancelledTotal > 0 ? ((totalReturned / nonCancelledTotal) * 100).toFixed(1) : "0.0";
+                  const totalRTO = entries.reduce((sum, [, v]) => sum + v.rto, 0);
+                  const deliveredOrders = totalPayments;
+                  const avgProfit = deliveredOrders > 0 ? (totalProfit / deliveredOrders).toFixed(2) : "0.00";
                   return (
                     <>
                       <tr style={{ background: "#f5f5f5", borderTop: "3px solid #333" }}>
@@ -834,13 +963,42 @@ export default function MeeshoProfitDashboard() {
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: parseFloat(totalReturnRate) > 10 ? "#d32f2f" : "#388e3c" }}>
                           {totalReturnRate}%
                         </td>
-                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalCancelled > 0 ? "#e65100" : "inherit" }}>{totalCancelled}</td>
+                        {showRTO && <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalRTO > 0 ? "#d32f2f" : "inherit" }}>{totalRTO}</td>}
+                        {showRTO && (() => { const totalRTORate = nonCancelledTotal > 0 ? ((totalRTO / nonCancelledTotal) * 100).toFixed(1) : "0.0"; return <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: parseFloat(totalRTORate) > 10 ? "#d32f2f" : "#388e3c" }}>{totalRTORate}%</td>; })()}
+                        {showCancelled && <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalCancelled > 0 ? "#e65100" : "inherit" }}>{totalCancelled}</td>}
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalPending > 0 ? "#ef6c00" : "inherit" }}>{totalPending}</td>
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{formatIndianCurrency(totalRevenue)}</td>
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{formatIndianCurrency(totalPurchase)}</td>
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", color: totalProfit >= 0 ? "green" : "red" }}>
                           {formatIndianCurrency(totalProfit)}
                         </td>
+                        {showAdsComparison && (() => {
+                          const tAdOrders = entries.reduce((s, [, v]) => s + v.adOrders, 0);
+                          const tAdReturned = entries.reduce((s, [, v]) => s + v.adReturned, 0);
+                          const tAdRto = entries.reduce((s, [, v]) => s + v.adRto, 0);
+                          const tAdCancelled = entries.reduce((s, [, v]) => s + v.adCancelled, 0);
+                          const tOrgOrders = totalOrders - tAdOrders;
+                          const tOrgReturned = totalReturned - tAdReturned;
+                          const tOrgRto = totalRTO - tAdRto;
+                          const tOrgCancelled = totalCancelled - tAdCancelled;
+                          const adNonCanc = tAdOrders - tAdCancelled;
+                          const orgNonCanc = tOrgOrders - tOrgCancelled;
+                          const adRetRate = adNonCanc > 0 ? ((tAdReturned / adNonCanc) * 100).toFixed(1) : "0.0";
+                          const adRtoRate = adNonCanc > 0 ? ((tAdRto / adNonCanc) * 100).toFixed(1) : "0.0";
+                          const adCancRate = tAdOrders > 0 ? ((tAdCancelled / tAdOrders) * 100).toFixed(1) : "0.0";
+                          const orgRetRate = orgNonCanc > 0 ? ((tOrgReturned / orgNonCanc) * 100).toFixed(1) : "0.0";
+                          const orgRtoRate = orgNonCanc > 0 ? ((tOrgRto / orgNonCanc) * 100).toFixed(1) : "0.0";
+                          const orgCancRate = tOrgOrders > 0 ? ((tOrgCancelled / tOrgOrders) * 100).toFixed(1) : "0.0";
+                          return <>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", background: "#fafaff", color: "#667eea" }}>{tAdOrders}</td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", background: "#fafaff", color: parseFloat(adRetRate) > parseFloat(orgRetRate) ? "#d32f2f" : "#388e3c" }}>{adRetRate}%</td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", background: "#fafaff", color: parseFloat(adRtoRate) > parseFloat(orgRtoRate) ? "#d32f2f" : "#388e3c" }}>{adRtoRate}%</td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", background: "#fafaff", color: parseFloat(adCancRate) > parseFloat(orgCancRate) ? "#d32f2f" : "#388e3c" }}>{adCancRate}%</td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", background: "#f5fff5", color: "#388e3c" }}>{orgRetRate}%</td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", background: "#f5fff5", color: "#388e3c" }}>{orgRtoRate}%</td>
+                            <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px", background: "#f5fff5", color: "#388e3c" }}>{orgCancRate}%</td>
+                          </>;
+                        })()}
                       </tr>
                       <tr style={{ background: "#e8eaf6" }}>
                         <td style={{ padding: "12px", fontWeight: "bold", fontSize: "14px" }}>AVERAGE</td>
@@ -850,13 +1008,24 @@ export default function MeeshoProfitDashboard() {
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", fontSize: "14px", color: parseFloat(avgReturnRate) > 10 ? "#d32f2f" : "#388e3c" }}>
                           {avgReturnRate}%
                         </td>
-                        <td style={{ padding: "12px", textAlign: "right" }}></td>
+                        {showRTO && <td style={{ padding: "12px", textAlign: "right" }}></td>}
+                        {showRTO && <td style={{ padding: "12px", textAlign: "right" }}></td>}
+                        {showCancelled && <td style={{ padding: "12px", textAlign: "right" }}></td>}
                         <td style={{ padding: "12px", textAlign: "right" }}></td>
                         <td style={{ padding: "12px", textAlign: "right" }}></td>
                         <td style={{ padding: "12px", textAlign: "right" }}></td>
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "700", fontSize: "14px", color: parseFloat(avgProfit) >= 0 ? "green" : "red" }}>
                           ₹{avgProfit}
                         </td>
+                        {showAdsComparison && <>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#fafaff" }}></td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#fafaff" }}></td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#fafaff" }}></td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#fafaff" }}></td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#f5fff5" }}></td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#f5fff5" }}></td>
+                          <td style={{ padding: "12px", textAlign: "right", background: "#f5fff5" }}></td>
+                        </>}
                       </tr>
                     </>
                   );
