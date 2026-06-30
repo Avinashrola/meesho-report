@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -325,7 +325,7 @@ export default function MeeshoProfitDashboard() {
       });
 
       const isCancelled = item.orderStatus && item.orderStatus.toLowerCase().trim() === "cancelled";
-      const isPaymentPending = item.isPaymentPending;
+     const isPaymentPending = item.isPaymentPending && !isCancelled && !isCustomerReturned && !isRTO;
       const isAdOrder = (item["Order source"] || item["Order Source"] || "").toLowerCase().trim() === "ad order";
 
 
@@ -386,50 +386,64 @@ export default function MeeshoProfitDashboard() {
     setSkuSummary(skuSum);
   };
 
-  const totalRevenue = mergedData.reduce((a, b) => a + b.totalSettlement, 0);
-  const totalProfit = mergedData.reduce((a, b) => a + b.profit, 0);
-  const netProfitAfterAds = totalProfit + totalAdsCost;
-  const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
-  const netProfitMargin = totalRevenue > 0 ? ((netProfitAfterAds / totalRevenue) * 100).toFixed(1) : 0;
-  const totalReturned = mergedData.filter((order) =>
-    order.paymentDetails.some((p) => {
-      const status = p.status.toLowerCase().trim();
-      return status === "return" || status === "returned";
-    })
-  ).length;
-  const rtoReturned = mergedData.filter((order) =>
-    order.paymentDetails.some((p) => {
-      const status = p.status.toLowerCase().trim();
-      return status === "rto" || status === "RTO";
-    })
-  ).length;
-  const cancelled = mergedData.filter((order) =>
-  // order.map((p) => {
-  {
-    const status = order.orderStatus.toLowerCase().trim();
-    return status === "cancelled" || status === "CANCELLED";
-  }
-    // }
-    // )
-  ).length;
+ // 1. Create a dynamic dataset based on the "Show Cancelled" checkbox
+ const activeData = showCancelled
+ ? mergedData
+ : mergedData.filter((order) => {
+     const status = (order.orderStatus || "").toLowerCase().trim();
+     return status !== "cancelled" && status !== "CANCELLED";
+   });
 
-  const totalReturnCharges = mergedData.reduce((sum, order) => {
-    const returnCharge = order.paymentDetails
-      .filter((p) => {
-        const status = p.status.toLowerCase().trim();
-        return status === "return" || status === "returned" || status === "rto";
-      })
-      .reduce((pSum, p) => pSum + p.amount, 0);
-    return sum + returnCharge;
-  }, 0);
-  const nonCancelledOrders = mergedData.length - cancelled;
-  const overallReturnRate = nonCancelledOrders > 0 ? ((totalReturned / nonCancelledOrders) * 100).toFixed(1) : 0;
-  const rtoReturnRate = nonCancelledOrders > 0 ? ((rtoReturned / nonCancelledOrders) * 100).toFixed(1) : 0;
-  const cancelledRate = mergedData.length > 0 ? ((cancelled / mergedData.length) * 100).toFixed(1) : 0;
+// 2. Automatically recalculate the Bar Chart and SKU summaries when the checkbox is toggled
+useEffect(() => {
+ if (mergedData.length > 0) {
+   calculateSummaries(activeData);
+ }
+}, [mergedData, showCancelled]); 
 
+// 3. Update all calculations to use activeData instead of mergedData
+const totalRevenue = activeData.reduce((a, b) => a + b.totalSettlement, 0);
+const totalProfit = activeData.reduce((a, b) => a + b.profit, 0);
+const netProfitAfterAds = totalProfit + totalAdsCost;
+const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0;
+const netProfitMargin = totalRevenue > 0 ? ((netProfitAfterAds / totalRevenue) * 100).toFixed(1) : 0;
+
+const totalReturned = activeData.filter((order) =>
+ order.paymentDetails.some((p) => {
+   const status = p.status.toLowerCase().trim();
+   return status === "return" || status === "returned";
+ })
+).length;
+
+const rtoReturned = activeData.filter((order) =>
+ order.paymentDetails.some((p) => {
+   const status = p.status.toLowerCase().trim();
+   return status === "rto" || status === "RTO";
+ })
+).length;
+
+const cancelled = activeData.filter((order) => {
+ const status = (order.orderStatus || "").toLowerCase().trim();
+ return status === "cancelled" || status === "CANCELLED";
+}).length;
+
+const totalReturnCharges = activeData.reduce((sum, order) => {
+ const returnCharge = order.paymentDetails
+   .filter((p) => {
+     const status = p.status.toLowerCase().trim();
+     return status === "return" || status === "returned" || status === "rto";
+   })
+   .reduce((pSum, p) => pSum + p.amount, 0);
+ return sum + returnCharge;
+}, 0);
+
+const nonCancelledOrders = activeData.length - cancelled; 
+const overallReturnRate = nonCancelledOrders > 0 ? ((totalReturned / nonCancelledOrders) * 100).toFixed(1) : 0;
+const rtoReturnRate = nonCancelledOrders > 0 ? ((rtoReturned / nonCancelledOrders) * 100).toFixed(1) : 0;
+const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) * 100).toFixed(1) : 0;
   // Filter and sort orders
   const getFilteredAndSortedOrders = () => {
-    let filtered = [...mergedData];
+    let filtered = [...activeData];
 
     // Apply SKU filter
     if (filterSKU) {
