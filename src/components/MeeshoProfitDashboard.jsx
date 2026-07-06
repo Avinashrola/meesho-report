@@ -10,6 +10,49 @@ function getCategory(productName) {
   return "Other";
 }
 
+function getCatalogId(record) {
+  return String(record?.["Catalog ID"] ?? record?.["Catalog Id"] ?? "").trim();
+}
+
+const CATALOG_ID_LENGTH = 9;
+
+function parseSearchTerms(searchTerm) {
+  return String(searchTerm || "")
+    .split(",")
+    .map((term) => term.trim())
+    .filter(Boolean);
+}
+
+function normalizeCatalogIds(catalogId) {
+  return String(catalogId || "")
+    .split(",")
+    .map((id) => id.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function matchesSkuOrCatalogSearch(searchTerm, sku, catalogId) {
+  if (!searchTerm?.trim()) return true;
+
+  const terms = parseSearchTerms(searchTerm);
+  if (terms.length === 0) return true;
+
+  const skuLower = String(sku || "").toLowerCase();
+  const catalogIds = normalizeCatalogIds(catalogId);
+
+  return terms.some((term) => {
+    const termLower = term.toLowerCase();
+
+    if (term.length === CATALOG_ID_LENGTH) {
+      return catalogIds.some((id) => id === termLower);
+    }
+
+    return (
+      skuLower.includes(termLower) ||
+      catalogIds.some((id) => id.includes(termLower))
+    );
+  });
+}
+
 function formatIndianCurrency(amount) {
   const num = parseFloat(amount);
   if (isNaN(num)) return "₹0";
@@ -51,6 +94,7 @@ export default function MeeshoProfitDashboard() {
   const [showCancelled, setShowCancelled] = useState(false);
   const [showRTO, setShowRTO] = useState(false);
   const [showAdsComparison, setShowAdsComparison] = useState(false);
+  const [showCatalogId, setShowCatalogId] = useState(false);
 
   const parseExcelOrCSV = (file, callback, sheetIndex = 1) => {
     const isExcel = file.name.endsWith(".xlsx");
@@ -360,9 +404,12 @@ export default function MeeshoProfitDashboard() {
           adRto: 0,
           adCancelled: 0,
           adPayments: 0,
-          adProfit: 0
+          adProfit: 0,
+          catalogIds: new Set()
         };
       }
+      const catalogId = getCatalogId(item);
+      if (catalogId) skuSum[item.SKU].catalogIds.add(catalogId);
       skuSum[item.SKU].orders += 1;
       skuSum[item.SKU].revenue += item.totalSettlement;
       skuSum[item.SKU].purchase += item.purchase;
@@ -380,6 +427,11 @@ export default function MeeshoProfitDashboard() {
         if (isRTO) skuSum[item.SKU].adRto += 1;
         if (isCancelled) skuSum[item.SKU].adCancelled += 1;
       }
+    });
+
+    Object.values(skuSum).forEach((sku) => {
+      sku.catalogId = [...sku.catalogIds].join(", ");
+      delete sku.catalogIds;
     });
 
     setSummary(categorySummary);
@@ -445,10 +497,10 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
   const getFilteredAndSortedOrders = () => {
     let filtered = [...activeData];
 
-    // Apply SKU filter
+    // Apply SKU / Catalog ID filter
     if (filterSKU) {
       filtered = filtered.filter((order) =>
-        order.sku?.toLowerCase().includes(filterSKU.toLowerCase())
+        matchesSkuOrCatalogSearch(filterSKU, order.sku, getCatalogId(order))
       );
     }
 
@@ -524,8 +576,8 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
     let entries = Object.entries(skuSummary);
 
     if (skuSearchFilter) {
-      entries = entries.filter(([sku]) =>
-        sku.toLowerCase().includes(skuSearchFilter.toLowerCase())
+      entries = entries.filter(([sku, val]) =>
+        matchesSkuOrCatalogSearch(skuSearchFilter, sku, val.catalogId || "")
       );
     }
 
@@ -797,7 +849,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
           <div style={{ marginBottom: "15px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
             <input
               type="text"
-              placeholder="🔍 Search by SKU..."
+              placeholder="🔍 Search by SKU or Catalog ID (e.g. 123456789,987654321)..."
               value={skuSearchFilter}
               onChange={(e) => setSkuSearchFilter(e.target.value)}
               style={{
@@ -811,6 +863,15 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
               }}
             />
             <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", color: "#555", cursor: "pointer", userSelect: "none" }}>
+                <input
+                  type="checkbox"
+                  checked={showCatalogId}
+                  onChange={(e) => setShowCatalogId(e.target.checked)}
+                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                Show Catalog ID
+              </label>
               <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", color: "#555", cursor: "pointer", userSelect: "none" }}>
                 <input
                   type="checkbox"
@@ -845,6 +906,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
                   <th style={{ padding: "12px", textAlign: "left", borderBottom: "2px solid #ddd" }}>SKU</th>
+                  {showCatalogId && <th style={{ padding: "12px", textAlign: "left", borderBottom: "2px solid #ddd" }}>Catalog ID</th>}
                   <th
                     onClick={() => handleSkuSort("orders")}
                     style={{ padding: "12px", textAlign: "right", borderBottom: "2px solid #ddd", cursor: "pointer", userSelect: "none" }}
@@ -908,6 +970,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
 
                     <tr key={sku} style={{ borderBottom: "1px solid #eee" }}>
                       <td style={{ padding: "12px" }}>{sku}</td>
+                      {showCatalogId && <td style={{ padding: "12px", color: "#555", fontSize: "13px" }}>{val.catalogId || "-"}</td>}
                       <td style={{ padding: "12px", textAlign: "right" }}>{val.orders}</td>
                       <td style={{ padding: "12px", textAlign: "right" }}>{val.payments}</td>
                       <td style={{ padding: "12px", textAlign: "right" }}>{val.returned}</td>
@@ -971,6 +1034,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
                     <>
                       <tr style={{ background: "#f5f5f5", borderTop: "3px solid #333" }}>
                         <td style={{ padding: "12px", fontWeight: "bold", fontSize: "14px" }}>TOTAL</td>
+                        {showCatalogId && <td style={{ padding: "12px" }}></td>}
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{totalOrders}</td>
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{totalPayments}</td>
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", fontSize: "14px" }}>{totalReturned}</td>
@@ -1016,6 +1080,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
                       </tr>
                       <tr style={{ background: "#e8eaf6" }}>
                         <td style={{ padding: "12px", fontWeight: "bold", fontSize: "14px" }}>AVERAGE</td>
+                        {showCatalogId && <td style={{ padding: "12px" }}></td>}
                         <td style={{ padding: "12px", textAlign: "right" }}></td>
                         <td style={{ padding: "12px", textAlign: "right" }}></td>
                         <td style={{ padding: "12px", textAlign: "right" }}></td>
@@ -1090,11 +1155,11 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
           }}>
             <div style={{ flex: "1", minWidth: "100px" }}>
               <label style={{ display: "block", fontSize: "13px", color: "#666", marginBottom: "5px", fontWeight: "600" }}>
-                🔍 Filter by SKU
+                🔍 Filter by SKU / Catalog ID
               </label>
               <input
                 type="text"
-                placeholder="Enter SKU..."
+                placeholder="Enter SKU or Catalog ID (e.g. 123456789,987654321)..."
                 value={filterSKU}
                 onChange={(e) => setFilterSKU(e.target.value)}
                 style={{
