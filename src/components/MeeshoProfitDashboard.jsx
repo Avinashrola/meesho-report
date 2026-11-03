@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import Papa from "papaparse";
+import Icon from "./Icon";
 import * as XLSX from "xlsx";
+import { expandPaymentFiles, readPaymentSheet } from "../utils/paymentFiles.mjs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 function getCategory(productName) {
@@ -161,62 +163,32 @@ export default function MeeshoProfitDashboard() {
     }, 100);
   };
 
-  const handlePaymentFilesUpload = (e) => {
+  const handlePaymentFilesUpload = async (e) => {
     const files = Array.from(e.target.files);
+    if (!files.length) return;
+    setError(null);
     setIsLoading(true);
-    setLoadingMessage(`Processing ${files.length} payment file(s)...`);
-    const allPayments = [];
-    let adsTotal = 0;
-    let filesProcessed = 0;
-
-    files.forEach((file) => {
-      // Parse payment data from sheet index 1
-      parseExcelOrCSV(file, (data) => {
-        allPayments.push(...data);
-        filesProcessed++;
-
-        // Parse ads cost data from sheet index 2
-        if (file.name.endsWith(".xlsx")) {
-          const reader = new FileReader();
-          reader.onload = (evt) => {
-            const data = new Uint8Array(evt.target.result);
-            const workbook = XLSX.read(data, { type: "array" });
-
-            // Check if there's a second sheet for ads
-            if (workbook.SheetNames.length > 2) {
-              const adsSheetName = workbook.SheetNames[2];
-              const adsSheet = workbook.Sheets[adsSheetName];
-              const adsData = XLSX.utils.sheet_to_json(adsSheet, { header: 1, defval: "" });
-
-              console.log(adsData);
-
-              // Sum up ads cost (assuming it's in a specific column)
-              adsData.slice(1).forEach((row) => {
-                const cost = parseFloat(row[7]) || 0; // Adjust index based on your sheet structure
-                adsTotal += cost;
-              });
-            }
-
-            if (filesProcessed === files.length) {
-              setProcessedPayments(allPayments);
-              setPaymentFiles(files);
-              setTotalAdsCost(adsTotal);
-              setIsLoading(false);
-              setLoadingMessage("");
-            }
-          };
-          reader.readAsArrayBuffer(file);
-        } else {
-          if (filesProcessed === files.length) {
-            setProcessedPayments(allPayments);
-            setPaymentFiles(files);
-            setTotalAdsCost(adsTotal);
-            setIsLoading(false);
-            setLoadingMessage("");
-          }
-        }
-      }, 1);
-    });
+    setLoadingMessage(`Opening ${files.length} payment file(s)...`);
+    try {
+      const sheets = await expandPaymentFiles(files);
+      const allPayments = [];
+      let adsTotal = 0;
+      for (const [index, file] of sheets.entries()) {
+        setLoadingMessage(`Processing payment sheets... ${index + 1}/${sheets.length}`);
+        const result = await readPaymentSheet(file);
+        allPayments.push(...result.payments);
+        adsTotal += result.adsTotal;
+      }
+      setProcessedPayments(allPayments);
+      setPaymentFiles(sheets);
+      setTotalAdsCost(adsTotal);
+    } catch (error) {
+      setError(`Could not load payment files. ${error.message}`);
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage("");
+      e.target.value = "";
+    }
   };
 
   const handleDefaultCostChange = (value) => {
@@ -604,11 +576,32 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
   };
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "5px", fontFamily: "'Urbanist', sans-serif" }}>
-      {/* <h1 style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "30px" }}>
-        📊 Multi-File P/L Dashboard
-      </h1> */}
-
+    <div className="app-shell">
+      <aside className="sidebar">
+        <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setStep("upload"); }}>
+          <span className="brand-mark">h<span>.</span></span>
+          <span>hisab<span className="brand-caption">MEESHO BUSINESS</span></span>
+        </a>
+        <div className="nav-label">WORKSPACE</div>
+        <nav aria-label="Workspace">
+          {[
+            ["upload", "upload", "Import data", false],
+            ["custom-cost", "price", "Product prices", !orderData.length || !processedPayments.length],
+            ["report", "report", "Profit report", !mergedData.length],
+          ].map(([value, icon, label, disabled]) => (
+            <button key={value} className={`nav-item ${step === value ? "active" : ""}`} disabled={disabled || isLoading} onClick={() => setStep(value)} aria-current={step === value ? "page" : undefined}>
+              <Icon name={icon} /><span>{label}</span>{step === value && <span className="nav-dot" />}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-note"><span className="icon-badge"><Icon name="shield" /></span><strong>Your business, in focus.</strong><p>Orders, settlements and profits. A little more clarity, every day.</p></div>
+        <div className="sidebar-footer"><span className="avatar">DI</span><div>Dash Infotech<small>Business tools, made simple</small></div></div>
+      </aside>
+      <div className="workspace">
+        <header className="topbar"><span>Workspace <span className="breadcrumb">/ {step === "upload" ? "Import data" : step === "custom-cost" ? "Product prices" : "Profit report"}</span></span><span className="workspace-badge"><i /> Meesho workspace</span></header>
+        <main className="main-content">
+          <div className="page-heading"><div><div className="eyebrow">YOUR BUSINESS AT A GLANCE</div><h1>{step === "upload" ? "Good decisions start with clarity." : step === "custom-cost" ? "A price for every product." : "Your numbers. The full picture."}</h1><p>{step === "upload" ? "Bring your reports together. See what your business really earns." : step === "custom-cost" ? "Set your purchase costs to turn settlements into meaningful profit insights." : "Explore your earnings, understand returns and find your best-performing products."}</p></div><span className="page-symbol"><Icon name={step === "upload" ? "upload" : step === "custom-cost" ? "price" : "report"} size={30}/></span></div>
+          <ol className="workflow" aria-label="Report progress">{[["upload", "Import reports"], ["custom-cost", "Set purchase costs"], ["report", "Explore your profit"]].map(([value, label], index) => <li key={value} className={step === value ? "current" : (["upload", "custom-cost", "report"].indexOf(step) > index ? "complete" : "")}><span>{["upload", "custom-cost", "report"].indexOf(step) > index ? <Icon name="check" size={15}/> : `0${index + 1}`}</span>{label}</li>)}</ol>
       {isLoading && (
         <div style={{
           position: "fixed",
@@ -643,66 +636,36 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
       )}
 
       {step === "upload" && (
-        <div style={{ background: "#f9f9f9", padding: "10px", borderRadius: "12px" }}>
-          <div style={{ marginBottom: "25px" }}>
-            <h3>📋 Step 1: Upload Order Files (Multiple)</h3>
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              multiple
-              onChange={handleOrderFileUpload}
-              style={{ padding: "10px", fontSize: "14px" }}
-            />
-            {orderData.length > 0 && (
-              <p style={{ color: "green", marginTop: "10px" }}>✅ {orderData.length} orders loaded from {orderFiles.length} file(s)</p>
-            )}
+        <section className="import-panel">
+          <div className="section-heading"><div><h2>Import your reports</h2><p>Two reports. One clear view of your business.</p></div><span className="subtle-tag">CSV · XLSX · ZIP</span></div>
+          <div className="upload-grid">
+            {[{type: "orders", title: "Order reports", text: "Start with your Meesho order exports.", accept: ".csv,.xlsx", handler: handleOrderFileUpload, count: orderData.length, files: orderFiles.length, hint: "CSV or XLSX · Multiple files supported"},
+              {type: "payments", title: "Payment reports", text: "Add your settlements and payment details.", accept: ".csv,.xlsx,.zip", handler: handlePaymentFilesUpload, count: processedPayments.length, files: paymentFiles.length, hint: "CSV, XLSX or ZIP · Folders inside ZIPs supported"}].map((item, index) => (
+              <div className={`upload-card ${item.count ? "has-files" : ""}`} key={item.type}>
+                <div className="upload-card-heading"><span className={`icon-badge ${index ? "teal" : ""}`}><Icon name={index ? "report" : "file"} size={23}/></span><span className="step-label">REPORT 0{index + 1}</span></div>
+                <h3>{item.title}</h3><p>{item.text}</p>
+                <label className="file-dropzone"><Icon name="upload" size={27}/><strong>{item.count ? "Choose replacement files" : "Choose files to upload"}</strong><span>{item.hint}</span><input type="file" aria-label={`Upload ${item.title.toLowerCase()}`} accept={item.accept} multiple disabled={isLoading} onChange={item.handler}/></label>
+                <div className={`upload-status ${item.count ? "ready" : ""}`}>{item.count ? <><Icon name="check" size={16}/>{item.count.toLocaleString("en-IN")} records · {item.files} file(s) loaded</> : <><span className="status-dot"/>Waiting for your report</>}</div>
+              </div>
+            ))}
           </div>
-
-          <div style={{ marginBottom: "25px" }}>
-            <h3>💳 Step 2: Upload Payment Files (Multiple Allowed)</h3>
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              multiple
-              onChange={handlePaymentFilesUpload}
-              style={{ padding: "10px", fontSize: "14px" }}
-            />
-            {processedPayments.length > 0 && (
-              <p style={{ color: "green", marginTop: "10px" }}>✅ {processedPayments.length} payment records loaded from {paymentFiles.length} files</p>
-            )}
-          </div>
-
-          {orderData.length > 0 && processedPayments.length > 0 && (
-            <button
-              onClick={() => setStep("custom-cost")}
-              style={{
-                background: "#4CAF50",
-                color: "white",
-                padding: "12px 24px",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "16px",
-                fontWeight: "600",
-                fontFamily: "Urbanist"
-              }}
-            >
-              Continue to Cost Setup →
-            </button>
-          )}
-
-          {error && <p style={{ color: "red", marginTop: "15px" }}>{error}</p>}
-        </div>
+          {error && <p className="error-message" role="alert">{error}</p>}
+          <div className="import-footer"><p><Icon name="shield" size={17}/> Your reports are processed locally in your browser.</p><button className="primary-button" disabled={isLoading || !orderData.length || !processedPayments.length} onClick={() => setStep("custom-cost")}>Continue to purchase costs <Icon name="arrow" size={18}/></button></div>
+        </section>
       )}
 
       {step === "custom-cost" && (
-        <div style={{ background: "#f9f9f9", padding: "30px", borderRadius: "12px" }}>
-          <h2>🧾 Enter Purchase Cost per SKU</h2>
+        <section className="cost-panel">
+          <h2>Purchase costs per SKU</h2>
+          {mergedData.length > 0 && (
+            <p>Edit the product purchase prices below, then update the report to recalculate profits and summaries.</p>
+          )}
 
           <button
             onClick={mergeOrdersWithPayments}
+            disabled={isLoading}
             style={{
-              background: "#2196F3",
+              background: "var(--primary)",
               color: "white",
               padding: "12px 24px",
               border: "none",
@@ -711,22 +674,23 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
               fontSize: "16px",
               fontWeight: "600",
               marginBottom: "25px",
-              fontFamily: "Urbanist"
+              fontFamily: "inherit"
             }}
           >
-            {isLoading ? "⏳ Processing..." : "✅ Generate Report"}
+            {isLoading ? "⏳ Processing..." : mergedData.length > 0 ? "Update Report" : "Generate Report"}
           </button>
 
           <div style={{ marginBottom: "25px", padding: "15px", background: "white", borderRadius: "8px" }}>
-            <label style={{ display: "block", marginBottom: "10px", fontWeight: "600" }}>
-              💼 Set Default Purchase Cost for All SKUs:
+            <label htmlFor="default-purchase-cost" style={{ display: "block", marginBottom: "10px", fontWeight: "600" }}>
+              Default purchase cost for all products
             </label>
             <input
               type="number"
+              id="default-purchase-cost"
               placeholder="e.g. 150"
               value={defaultCost}
               onChange={(e) => handleDefaultCostChange(e.target.value)}
-              style={{ padding: "10px", fontSize: "14px", width: "200px", borderRadius: "6px", border: "1px solid #ddd", fontFamily: "Urbanist" }}
+              style={{ padding: "10px", fontSize: "14px", width: "200px", borderRadius: "6px", border: "1px solid #ddd", fontFamily: "inherit" }}
             />
           </div>
 
@@ -738,9 +702,9 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
                   <input
                     type="number"
                     placeholder="Enter purchase cost"
-                    value={customCosts[sku] || ""}
+                    value={customCosts[sku] ?? ""}
                     onChange={(e) => handleCostChange(sku, e.target.value)}
-                    style={{ padding: "8px", fontSize: "14px", borderRadius: "6px", border: "1px solid #ddd", fontFamily: "Urbanist" }}
+                    style={{ padding: "8px", fontSize: "14px", borderRadius: "6px", border: "1px solid #ddd", fontFamily: "inherit" }}
                   />
                 </label>
               </div>
@@ -749,8 +713,9 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
 
           <button
             onClick={mergeOrdersWithPayments}
+            disabled={isLoading}
             style={{
-              background: "#2196F3",
+              background: "var(--primary)",
               color: "white",
               padding: "12px 24px",
               border: "none",
@@ -759,63 +724,80 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
               fontSize: "16px",
               fontWeight: "600",
               marginTop: "25px",
-              fontFamily: "Urbanist"
+              fontFamily: "inherit"
 
             }}
           >
-            {isLoading ? "⏳ Processing..." : "✅ Generate Report"}
+            {isLoading ? "⏳ Processing..." : mergedData.length > 0 ? "Update Report" : "Generate Report"}
           </button>
-        </div>
+        </section>
       )}
 
       {step === "report" && (
-        <div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "15px", marginBottom: "30px" }}>
-            <div style={{ background: "#e3f2fd", padding: "20px", borderRadius: "12px" }}>
+        <div className="report-panel">
+          <button
+            onClick={() => setStep("custom-cost")}
+            style={{
+              background: "var(--primary)",
+              color: "white",
+              padding: "12px 24px",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              fontSize: "16px",
+              fontWeight: "600",
+              marginBottom: "20px",
+              fontFamily: "inherit"
+            }}
+          >
+            Edit Product Prices
+          </button>
+          <div className="metrics-grid">
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📦 Total Orders</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#1976d2" }}>{nonCancelledOrders}</div>
               <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>Total incl. cancelled: {mergedData.length}</div>
             </div>
-            <div style={{ background: "#e8f5e9", padding: "20px", borderRadius: "12px" }}>
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💰 Total Revenue</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#388e3c" }}>{formatIndianCurrency(totalRevenue)}</div>
             </div>
-            <div style={{ background: "#fff3e0", padding: "20px", borderRadius: "12px" }}>
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💸 Net Profit</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#f57c00" }}>{formatIndianCurrency(netProfitAfterAds)}</div>
             </div>
-            <div style={{ background: "#f3e5f5", padding: "20px", borderRadius: "12px" }}>
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📈 Profit Margin</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#7b1fa2" }}>{netProfitMargin}%</div>
             </div>
-            <div style={{ background: "#fff9c4", padding: "20px", borderRadius: "12px" }}>
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>📢 Total Ads Cost</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#f57f17" }}>{formatIndianCurrency(totalAdsCost)}</div>
               <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>Marketing expenses</div>
             </div>
-            <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 Cancelled Orders</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: overallReturnRate > 10 ? "#d32f2f" : "#388e3c" }}>{cancelledRate}%</div>
               <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{cancelled} of {mergedData.length} orders</div>
             </div>
-            <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 RTO Returns</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: overallReturnRate > 10 ? "#d32f2f" : "#388e3c" }}>{rtoReturnRate}%</div>
               <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{rtoReturned} of {nonCancelledOrders} orders</div>
             </div>
-            <div style={{ background: "#ffebee", padding: "20px", borderRadius: "12px" }}>
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>🔁 Customer Returns</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: overallReturnRate > 10 ? "#d32f2f" : "#388e3c" }}>{overallReturnRate}%</div>
               <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>{totalReturned} of {nonCancelledOrders} orders</div>
             </div>
-            <div style={{ background: "#fce4ec", padding: "20px", borderRadius: "12px" }}>
+            <div className="metric-card">
               <div style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>💔 Return Charges</div>
               <div style={{ fontSize: "32px", fontWeight: "700", color: "#c21818ff" }}>{formatIndianCurrency(totalReturnCharges)}</div>
               <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>Total deductions from returns</div>
             </div>
           </div>
           <div style={{ background: "white", padding: "25px", borderRadius: "12px", marginBottom: "30px", border: "1px solid #e0e0e0" }}>
-            <h3 style={{ marginTop: 0, marginBottom: "15px", color: "#333" }}>📊 Return Calculation Method</h3>
+            <h3 style={{ marginTop: 0, marginBottom: "15px", color: "#333" }}>Understanding your returns</h3>
             <div style={{ background: "#f5f5f5", padding: "15px", borderRadius: "8px", fontSize: "14px", lineHeight: "1.6" }}>
               <p style={{ margin: "0 0 10px 0" }}>
                 <strong>How returns are counted:</strong>
@@ -840,12 +822,12 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
                 <YAxis />
                 <Tooltip formatter={(value) => `₹${value.toFixed(2)}`} />
                 <Legend />
-                <Bar dataKey="profit" fill="#4bc0c0" name="Net Profit" />
+                <Bar dataKey="profit" fill="#982282" name="Net Profit" />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          <h2>📦 SKU-wise Summary</h2>
+          <h2>Product performance</h2>
           <div style={{ marginBottom: "15px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
             <input
               type="text"
@@ -859,7 +841,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
                 borderRadius: "6px",
                 outline: "none",
                 width: "300px",
-                fontFamily: "'Urbanist', sans-serif"
+                fontFamily: "inherit"
               }}
             />
             <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
@@ -1113,7 +1095,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
             </table>
           </div>
 
-          <h2>📋 Order-wise Payment Details</h2>
+          <h2>Order payment details</h2>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
             <div style={{ fontSize: "14px", color: "#666" }}>
               Showing {filteredOrders.length} of {mergedData.length} orders
@@ -1121,7 +1103,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
             <button
               onClick={exportToExcel}
               style={{
-                background: "#4CAF50",
+                background: "var(--primary)",
                 color: "white",
                 padding: "10px 20px",
                 border: "none",
@@ -1144,7 +1126,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
 
           {/* Filters */}
           <div style={{
-            background: "#f9f9f9",
+            background: "var(--background)",
 
             borderRadius: "12px",
             marginBottom: "10px",
@@ -1203,7 +1185,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
               <button
                 onClick={resetFilters}
                 style={{
-                  background: "#ff9800",
+                  background: "var(--primary)",
                   color: "white",
                   padding: "10px 20px",
                   border: "none",
@@ -1333,59 +1315,6 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
             </p>
           )} */}
 
-          <div style={{
-            marginTop: "60px",
-            padding: "30px 0",
-            borderTop: "1px solid #e0e0e0",
-            background: "#fafafa"
-          }}>
-            <div style={{
-              maxWidth: "1200px",
-              margin: "0 auto",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "20px"
-            }}>
-              <div style={{ flex: "1", minWidth: "250px" }}>
-                <div style={{ fontSize: "20px", fontWeight: "700", color: "#333", marginBottom: "8px" }}>
-                  Meesho Analytics Dashboard
-                </div>
-                <div style={{ fontSize: "13px", color: "#666", lineHeight: "1.6" }}>
-                  Professional business intelligence and profit tracking solution for e-commerce sellers.
-                </div>
-              </div>
-
-              <div style={{
-                textAlign: "right",
-                flex: "1",
-                minWidth: "250px",
-                fontSize: "13px",
-                color: "#666"
-              }}>
-                <div style={{ marginBottom: "8px" }}>
-                  <strong style={{ color: "#333" }}>Developed by</strong>
-                </div>
-                <div style={{ fontSize: "16px", fontWeight: "600", color: "#667eea", marginBottom: "4px" }}>
-                  DASH INFOTECH
-                </div>
-                {/* <div style={{ fontSize: "12px", color: "#999" }}>
-                  Full Stack Developer | Data Analytics Specialist
-                </div> */}
-              </div>
-            </div>
-          </div>
-          <div style={{
-            textAlign: "center",
-            marginTop: "25px",
-            paddingTop: "20px",
-            borderTop: "1px solid #e0e0e0",
-            fontSize: "12px",
-            color: "#999"
-          }}>
-            © {new Date().getFullYear()} All Rights Reserved. Built By Dash Infotech.
-          </div>
 
         </div>
       )}
@@ -1394,6 +1323,9 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
 
 
 
+          <footer className="workspace-footer"><span>hisab <span>by Dash Infotech</span></span><span>A clearer view of your Meesho business.</span></footer>
+        </main>
+      </div>
     </div>
 
   );
