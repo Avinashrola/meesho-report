@@ -70,7 +70,7 @@ function formatIndianCurrency(amount) {
   return `₹${formatted}.${decimalPart}`;
 }
 
-export default function MeeshoProfitDashboard() {
+export default function MeeshoProfitDashboard({ onChangeMarketplace }) {
   const [orderData, setOrderData] = useState([]);
   const [orderFiles, setOrderFiles] = useState([]);
   const [paymentFiles, setPaymentFiles] = useState([]);
@@ -598,7 +598,7 @@ const cancelledRate = activeData.length > 0 ? ((cancelled / activeData.length) *
         <div className="sidebar-footer"><span className="avatar">DI</span><div>Dash Infotech<small>Business tools, made simple</small></div></div>
       </aside>
       <div className="workspace">
-        <header className="topbar"><span>Workspace <span className="breadcrumb">/ {step === "upload" ? "Import data" : step === "custom-cost" ? "Product prices" : "Profit report"}</span></span><span className="workspace-badge"><i /> Meesho workspace</span></header>
+        <header className="topbar"><span>Workspace <span className="breadcrumb">/ {step === "upload" ? "Import data" : step === "custom-cost" ? "Product prices" : "Profit report"}</span></span><button type="button" className="workspace-badge marketplace-switch" onClick={onChangeMarketplace} aria-label="Change marketplace, currently Meesho"><i /> Meesho <span aria-hidden="true">⌄</span></button></header>
         <main className="main-content">
           <div className="page-heading"><div><div className="eyebrow">YOUR BUSINESS AT A GLANCE</div><h1>{step === "upload" ? "Good decisions start with clarity." : step === "custom-cost" ? "A price for every product." : "Your numbers. The full picture."}</h1><p>{step === "upload" ? "Bring your reports together. See what your business really earns." : step === "custom-cost" ? "Set your purchase costs to turn settlements into meaningful profit insights." : "Explore your earnings, understand returns and find your best-performing products."}</p></div><span className="page-symbol"><Icon name={step === "upload" ? "upload" : step === "custom-cost" ? "price" : "report"} size={30}/></span></div>
           <ol className="workflow" aria-label="Report progress">{[["upload", "Import reports"], ["custom-cost", "Set purchase costs"], ["report", "Explore your profit"]].map(([value, label], index) => <li key={value} className={step === value ? "current" : (["upload", "custom-cost", "report"].indexOf(step) > index ? "complete" : "")}><span>{["upload", "custom-cost", "report"].indexOf(step) > index ? <Icon name="check" size={15}/> : `0${index + 1}`}</span>{label}</li>)}</ol>

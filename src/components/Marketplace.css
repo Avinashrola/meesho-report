@@ -1,0 +1,97 @@
+.marketplace-shell {
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  background:radial-gradient(ellipse at 18% 35%,#f5eaf470,transparent 50%),var(--background);
+}
+
+.marketplace-header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  padding:28px 5%;
+  border-bottom:1px solid var(--border);
+  background:#ffffffa6;
+}
+
+.marketplace-header .brand { margin:0; }
+.marketplace-header-note { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:12px; }
+.marketplace-main { flex:1; width:100%; max-width:940px; margin:0 auto; padding:68px 30px 44px; }
+.marketplace-intro { text-align:center; margin-bottom:38px; }
+.marketplace-kicker { display:block; color:var(--primary); font-size:10px; letter-spacing:2px; font-weight:750; margin-bottom:17px; }
+.marketplace-intro h1 { font-size:clamp(32px,4vw,46px); font-weight:750; letter-spacing:-1.8px; margin-bottom:13px; line-height:1.15; }
+.marketplace-intro h1:focus { outline:none; }
+.marketplace-intro p { color:var(--muted); font-size:15px; margin:0; }
+.marketplace-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+.marketplace-card { --marketplace-accent:var(--primary); display:flex; flex-direction:column; align-items:stretch; min-width:0; text-align:left; background:#fff; border:1px solid var(--border); border-radius:23px; padding:30px; cursor:pointer; color:#252335; transition:transform .2s,border-color .2s,box-shadow .2s; }
+.marketplace-card:not(:disabled):hover { filter:none; border-color:var(--marketplace-accent); transform:translateY(-4px); box-shadow:0 12px 32px #2523350c; }
+.marketplace-card.flipkart-card { --marketplace-accent:#2460cc; }
+.marketplace-card.flipkart-card:focus-visible { outline-color:#2460cc80!important; }
+.marketplace-card-top { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:30px; }
+.marketplace-logo { display:inline-grid; place-items:center; height:64px; width:64px; border-radius:19px; font-size:46px; font-weight:850; line-height:1; letter-spacing:-3px; }
+.meesho-logo { background:#f9e8f3; color:#a32181; padding-bottom:7px; }
+.flipkart-logo { background:#fff2b6; color:#2460cc; font-style:italic; padding-right:8px; padding-bottom:3px; }
+.marketplace-status { display:inline-flex; align-items:center; gap:6px; border-radius:6px; padding:6px 9px; font-size:10px; font-weight:650; white-space:nowrap; }
+.marketplace-status.available { color:#217a75; background:#eaf5f0; }
+.marketplace-status i { width:5px; height:5px; border-radius:50%; background:currentColor; }
+.marketplace-status.upcoming { color:#7b6727; background:#fbf5e4; }
+.marketplace-name { font-size:28px; font-weight:750; letter-spacing:-.8px; margin-bottom:12px; }
+.marketplace-description { color:var(--muted); font-size:14px; line-height:1.7; margin-bottom:24px; }
+.marketplace-features { display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; margin-bottom:28px; }
+.marketplace-features span { padding:6px 8px; background:#f8f7fa; border:1px solid var(--border); border-radius:6px; color:#777384; font-size:10px; }
+.marketplace-card-action { display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid var(--border); padding-top:22px; color:var(--marketplace-accent); font-size:13px; font-weight:700; }
+.marketplace-hint { display:flex; align-items:center; justify-content:center; gap:8px; font-size:12px; color:var(--muted); margin:28px 0 0; }
+.marketplace-footer { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:24px 5%; color:#89818f; font-size:11px; border-top:1px solid var(--border); }
+.marketplace-footer>span:first-child { font-size:19px; font-weight:750; }
+.marketplace-footer>span>span { font-size:11px; font-weight:500; margin-left:10px; }
+.marketplace-switch { cursor:pointer; font-weight:650; }
+.marketplace-switch>span { margin-left:8px; }
+.marketplace-back { display:flex; align-items:center; justify-content:center; gap:10px; margin:28px auto 0; padding:13px 18px; background:#fff; border:1px solid var(--border); color:#252335; border-radius:10px; cursor:pointer; font-size:13px; font-weight:650; }
+.settlement-main { max-width:1200px; padding-top:28px; }
+.settlement-workspace { --primary:#2460cc; --soft:#edf3ff; }
+.settlement-back { margin:0 0 32px; background:transparent; padding:0; border:0; color:var(--muted); }
+.settlement-workspace .marketplace-kicker { color:#2460cc; }
+.settlement-dropzone { min-height:185px; background:#f8faff; border-color:#bdcdeb; text-align:center; }
+.settlement-dropzone:hover,.settlement-dropzone.is-dragging { background:#edf3ff; border-color:#2460cc; }
+.settlement-upload-status { display:flex; align-items:center; flex-wrap:wrap; gap:9px; color:var(--muted); font-size:12px; margin-top:20px; overflow-wrap:anywhere; }
+.settlement-upload-status>span:first-of-type { min-width:0; }
+.settlement-privacy { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted); margin:18px 0 0; }
+.settlement-error { margin:16px 0 0; }
+.settlement-next { display:flex; align-items:center; justify-content:center; gap:16px; margin:36px 0 0; }
+.settlement-next h2 { font-size:16px; margin:0 0 6px; }
+.settlement-next p { color:var(--muted); font-size:12px; margin:0; }
+.settlement-preview { margin-top:26px; min-width:0; }
+.settlement-sheet-controls { display:flex; align-items:flex-end; flex-wrap:wrap; gap:18px; justify-content:space-between; margin-bottom:20px; font-size:12px; color:var(--muted); }
+.settlement-sheet-controls label { display:flex; flex-direction:column; gap:8px; min-width:0; max-width:100%; color:#252335; font-weight:650; }
+.settlement-sheet-controls select { width:300px; border:1px solid var(--border); background:white; border-radius:9px; padding:10px; }
+.settlement-table-scroll { overflow:auto; max-height:560px; border:1px solid var(--border); border-radius:12px; }
+.settlement-table { border-collapse:separate; border-spacing:0; min-width:100%; font-size:12px; }
+.settlement-table th,.settlement-table td { padding:12px 14px; border-bottom:1px solid var(--border); border-right:1px solid var(--border); min-width:125px; max-width:360px; overflow-wrap:anywhere; vertical-align:top; text-align:left; }
+.settlement-table thead th { position:sticky; top:0; background:#edf3ff; color:#2460cc; z-index:1; }
+.settlement-table tbody th { min-width:50px; background:#f8f7fa; color:var(--muted); font-weight:500; }
+.settlement-table thead th:first-child { min-width:50px; }
+.settlement-table tbody tr:hover td { background:#f8faff; }
+.settlement-pagination { display:flex; align-items:center; justify-content:space-between; gap:15px; margin-top:18px; color:var(--muted); font-size:12px; }
+.settlement-pagination>div { display:flex; gap:8px; }
+.settlement-pagination button { border:1px solid var(--border); background:#fff; border-radius:8px; padding:9px 12px; cursor:pointer; color:#2460cc; }
+.settlement-empty { color:var(--muted); font-size:13px; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+@media(max-width:620px) {
+  .marketplace-header { padding:22px; }
+  .marketplace-header-note { display:none; }
+  .marketplace-main { padding:40px 20px 32px; }
+  .marketplace-intro { margin-bottom:28px; }
+  .marketplace-kicker { font-size:9px; letter-spacing:1.4px; }
+  .marketplace-intro p { font-size:13px; }
+  .marketplace-grid { grid-template-columns:1fr; gap:18px; }
+  .marketplace-card { padding:24px; }
+  .marketplace-card-top { margin-bottom:22px; }
+  .marketplace-footer { padding:22px; }
+  .marketplace-footer>span:last-child { display:none; }
+  .settlement-main { padding-top:24px; }
+  .settlement-back { margin-bottom:28px; }
+  .settlement-workspace .page-heading>.marketplace-logo { display:none; }
+  .settlement-next { align-items:flex-start; }
+}
